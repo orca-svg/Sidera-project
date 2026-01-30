@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Deep Space Black: 차갑고 깊은 우주 */
+  --sidera-void: #030305;
+  --sidera-starlight: #f0f0f0;
+  --sidera-accent: #ffd700;
+  /* Alpha Star Gold */
+}
+
+body {
+  color: var(--sidera-starlight);
+  background: var(--sidera-void);
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  /* 우주는 스크롤되지 않습니다, 유영할 뿐 */
+  font-family: var(--font-geist-sans), sans-serif;
+  /* Next.js 기본 폰트 활용 */
+}
