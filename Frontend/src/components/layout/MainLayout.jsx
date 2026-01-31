@@ -63,7 +63,7 @@ export function MainLayout() {
                     maxWidth: 'var(--max-chat-width)',
                     height: '90%',
                     marginTop: '2%', // Slight top margin
-                    display: 'flex',
+                    display: isUniverseExpanded ? 'none' : 'flex', // Hide when expanded
                     flexDirection: 'column',
                     borderRadius: '16px',
                     pointerEvents: 'auto', // Re-enable pointer events for chat
@@ -79,7 +79,22 @@ export function MainLayout() {
                         justifyContent: 'space-between'
                     }}>
                         <h2 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-main)', fontWeight: 600 }}>Sidera</h2>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Constellation Mode</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Constellation Mode</div>
+                            <button
+                                onClick={toggleUniverse}
+                                style={{
+                                    background: 'transparent',
+                                    border: '1px solid var(--glass-border)',
+                                    color: 'var(--text-muted)',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    padding: '2px 6px',
+                                    fontSize: '0.7rem'
+                                }}>
+                                ↗ Expand
+                            </button>
+                        </div>
                     </div>
 
                     {/* Messages List */}
@@ -273,6 +288,42 @@ export function MainLayout() {
                 </div>
             </div>
 
-        </div>
+
+
+            {/* Floating "Show Chat" Button (Visible only when universe is expanded) */}
+            {
+                isUniverseExpanded && (
+                    <div style={{
+                        position: 'absolute',
+                        bottom: '30px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        zIndex: 10,
+                        pointerEvents: 'auto'
+                    }}>
+                        <button
+                            onClick={toggleUniverse}
+                            style={{
+                                background: 'rgba(0,0,0,0.6)',
+                                backdropFilter: 'blur(10px)',
+                                border: '1px solid rgba(255,255,255,0.2)',
+                                color: 'white',
+                                padding: '12px 24px',
+                                borderRadius: '30px',
+                                cursor: 'pointer',
+                                fontSize: '1rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+                            }}
+                        >
+                            <span>💬</span> Open Chat
+                        </button>
+                    </div>
+                )
+            }
+
+        </div >
     )
 }
