@@ -31,6 +31,14 @@ export const useStore = create((set, get) => ({
     }
   },
 
+  resetProject: async () => {
+    // Create new project and clear local state
+    const id = await get().initializeProject();
+    if (id) {
+      set({ nodes: [], edges: [], activeNode: null });
+    }
+  },
+
   addNode: async (content) => {
     const { nodes, activeNode, projectId, initializeProject } = get()
     console.log("[useStore] addNode called with:", content);
