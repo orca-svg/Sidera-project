@@ -182,14 +182,14 @@ export function MainLayout() {
 
             {/* LAYER 2: Main Chat Area (Center) */}
             <div className={clsx(
-                "absolute inset-0 z-10 flex flex-col transition-all duration-300 pointer-events-none",
-                isSidebarOpen ? "md:pl-[280px]" : "pl-0"
+                "absolute inset-y-0 right-0 z-10 flex flex-col transition-all duration-300 pointer-events-none",
+                isSidebarOpen ? "md:left-[280px] w-full md:w-[calc(100%-280px)]" : "left-0 w-full"
             )}>
                 {/* Top Bar (Sticky) */}
                 <div className="sticky top-0 w-full h-16 flex items-center justify-center pointer-events-auto z-20">
                     <button className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-white/5 transition-colors text-gray-300 hover:text-white group backdrop-blur-sm">
-                        <span className="text-lg font-medium group-hover:text-accent transition-colors">Alpha Star Node</span>
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-accent/20 text-accent border border-accent/20">1.0</span>
+                        <span className="text-lg font-medium group-hover:text-accent transition-colors">Sidera</span>
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-accent/20 text-accent border border-accent/20">Alpha 1.0</span>
                     </button>
                 </div>
 
@@ -281,8 +281,7 @@ export function MainLayout() {
                     <div className="absolute inset-0 bg-gradient-to-t from-background via-background/90 to-transparent pointer-events-none h-32 -top-16"></div>
 
                     <div className={clsx(
-                        "relative w-full max-w-3xl mx-auto transition-all duration-300 transform",
-                        isSidebarOpen ? "translate-x-0" : ""
+                        "relative w-full max-w-3xl mx-auto transition-all duration-300"
                     )}>
                         <form onSubmit={handleSubmit} className="relative group">
                             <div className="absolute inset-0 bg-gradient-to-r from-accent/5 via-purple-500/5 to-accent/5 rounded-[28px] blur-xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-700"></div>
