@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useEffect } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls, Stars } from '@react-three/drei'
 import { useStore } from '../../store/useStore'
@@ -9,12 +9,24 @@ import * as THREE from 'three'
 function InteractiveBackground() {
     const ref = useRef()
 
+    const mouseRef = useRef({ x: 0, y: 0 })
+
+    useEffect(() => {
+        const handleMouseMove = (event) => {
+            // Normalize mouse position (-1 to 1)
+            mouseRef.current.x = (event.clientX / window.innerWidth) * 2 - 1
+            mouseRef.current.y = -(event.clientY / window.innerHeight) * 2 + 1
+        }
+
+        window.addEventListener('mousemove', handleMouseMove)
+        return () => window.removeEventListener('mousemove', handleMouseMove)
+    }, [])
+
     useFrame((state) => {
         if (ref.current) {
             // Gentle rotation based on mouse position (Parallax)
-            // state.pointer.x/y are normalized (-1 to 1)
-            const x = state.pointer.x * 0.2
-            const y = state.pointer.y * 0.2
+            const x = mouseRef.current.x * 0.2
+            const y = mouseRef.current.y * 0.2
 
             ref.current.rotation.y = THREE.MathUtils.lerp(ref.current.rotation.y, x, 0.05)
             ref.current.rotation.x = THREE.MathUtils.lerp(ref.current.rotation.x, -y, 0.05)
