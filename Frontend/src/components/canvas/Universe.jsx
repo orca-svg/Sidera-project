@@ -70,8 +70,21 @@ function AnimatedUniverse({ children }) {
 }
 
 export function Universe({ isInteractive = true }) {
-    const { nodes, edges, activeNode, setActiveNode, viewMode, setIsWarping } = useStore()
+    const { nodes, edges, activeNode, setActiveNode, viewMode, setIsWarping, focusTarget } = useStore()
     const cameraControlsRef = useRef()
+
+    // Camera Navigation (Fly to Node)
+    useEffect(() => {
+        if (viewMode === 'constellation' && focusTarget && cameraControlsRef.current) {
+            const [x, y, z] = focusTarget.position
+            // Fly to "Eye" position (z+8) and look at "Target" (star center)
+            cameraControlsRef.current.setLookAt(
+                x, y, z + 8, // Position
+                x, y, z,     // Target
+                true         // Smooth Transition
+            )
+        }
+    }, [focusTarget, viewMode])
 
     // Cinematic Warp Transition
     useEffect(() => {

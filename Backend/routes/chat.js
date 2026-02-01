@@ -89,15 +89,25 @@ router.post('/', async (req, res) => {
         newNode.summaryEmbedding = await aiService.getEmbedding(newNode.summary);
         newNode.fullEmbedding = await aiService.getEmbedding(newNode.question + " " + newNode.answer);
 
-        // Position Logic (Simple Spiral for now)
-        const count = await Node.countDocuments({ projectId });
-        const angle = count * 0.5;
-        const radius = 5 + (count * 0.2);
-        newNode.position = {
-            x: Math.cos(angle) * radius,
-            y: Math.sin(angle) * radius,
-            z: (Math.random() - 0.5) * 2
-        };
+        // Position Logic: Relative to Last Node (Persistent Constellation)
+        let newPosition = { x: 0, y: 0, z: 0 };
+
+        if (actualLastNode && actualLastNode.position) {
+            // Random direction in 3D or 2D plane
+            const theta = Math.random() * 2 * Math.PI; // Angle on XY plane
+            const phi = (Math.random() - 0.5) * Math.PI; // Elevation (optional for 3D looseness)
+
+            // Distance between 5 and 10
+            const distance = 5 + Math.random() * 5;
+
+            newPosition = {
+                x: actualLastNode.position.x + distance * Math.cos(theta),
+                y: actualLastNode.position.y + distance * Math.sin(theta),
+                z: actualLastNode.position.z + (Math.random() - 0.5) * 4 // Creating some depth variation
+            };
+        }
+
+        newNode.position = newPosition;
 
         const savedNode = await newNode.save();
 

@@ -5,7 +5,7 @@ import { List, ChevronRight, ChevronLeft, Target, Telescope } from 'lucide-react
 import clsx from 'clsx';
 
 export function TopicList() {
-  const { nodes, setActiveNode, viewMode, setViewMode } = useStore();
+  const { nodes, flyToNode, viewMode, setViewMode } = useStore();
   const [isOpen, setIsOpen] = useState(true);
 
   // Filter important nodes for the Table of Contents
@@ -72,7 +72,7 @@ export function TopicList() {
                 tocNodes.map((node) => (
                   <button
                     key={node.id}
-                    onClick={() => setActiveNode(node.id)}
+                    onClick={() => flyToNode(node.id)}
                     className="relative w-full text-left group pl-6"
                   >
                     {/* Dot on Line */}

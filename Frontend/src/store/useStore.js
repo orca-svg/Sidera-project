@@ -202,6 +202,25 @@ export const useStore = create((set, get) => ({
     }
   },
 
+  focusTarget: null, // { position: [x,y,z], id: string }
+
+  // --- UI Actions ---
+  toggleUniverse: () => set(state => ({ isUniverseExpanded: !state.isUniverseExpanded })),
+  setViewMode: (mode) => set({ viewMode: mode }),
+  setIsWarping: (isWarping) => set({ isWarping }),
+
+  // Camera Navigation
+  flyToNode: (nodeId) => {
+    const { nodes } = get();
+    const target = nodes.find(n => n.id === nodeId);
+    if (target) {
+      // 1. Set Active Node (Highlight)
+      set({ activeNode: nodeId });
+      // 2. Set Focus Target (Trigger Camera Move)
+      set({ focusTarget: { position: target.position, id: target.id } });
+    }
+  },
+
   setActiveNode: (id) => set({ activeNode: id }),
 
   // Initial App Load
