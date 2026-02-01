@@ -51,9 +51,9 @@ export function Star({ position, node, isSelected, onClick }) {
         }
     })
 
-    // Label: Show in Constellation Mode OR on Hover/Select
-    // Allow labels for Alpha stars in constellation mode by default
-    const showLabel = hovered || isSelected || (viewMode === 'constellation' && isAlpha);
+    // Label: Show ONLY in Constellation Mode (Clean Chat Mode)
+    // Logic: If constellation, allow hover/selected or default Alpha visibility
+    const showLabel = viewMode === 'constellation' && (hovered || isSelected || isAlpha);
 
     return (
         <group position={position} onClick={onClick}>
