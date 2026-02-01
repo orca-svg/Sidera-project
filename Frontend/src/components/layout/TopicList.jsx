@@ -87,7 +87,7 @@ export function TopicList() {
                         ? "text-white font-medium text-sm"
                         : "text-gray-400 text-xs hover:text-gray-200"
                     )}>
-                      {node.topicSummary || "Topic Node"}
+                      {node.topicSummary || (node.question ? (node.question.length > 30 ? node.question.substring(0, 30) + "..." : node.question) : null) || (node.keywords && node.keywords[0]) || "New Topic"}
                     </div>
                   </button>
                 ))
