@@ -65,6 +65,17 @@ export function MainLayout() {
         }
     }, [inputValue])
 
+    // ESC Key Listener for connection mode
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape' && viewMode === 'constellation') {
+                setViewMode('chat')
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [viewMode, setViewMode])
+
     const handleViewUniverse = () => {
         setViewMode('constellation')
         if (window.innerWidth < 768) setIsSidebarOpen(false)
@@ -102,18 +113,11 @@ export function MainLayout() {
                     >
                         <PanelLeftClose size={20} />
                     </button>
-                    <span className="text-gray-400 text-xs font-mono">HISTORY</span>
+                    {/* <span className="text-gray-400 text-xs font-mono">HISTORY</span> Removed */}
                 </div>
 
-                {/* View Mode Section */}
+                {/* View Mode Section: New Chat */}
                 <div className="px-4 pb-4">
-                    <button
-                        onClick={handleViewUniverse}
-                        className="w-full h-10 flex items-center gap-3 px-4 bg-gray-800/50 hover:bg-gray-700 text-gray-200 hover:text-white rounded-full transition-all duration-200 border border-transparent hover:border-accent/30 group mb-2"
-                    >
-                        <Telescope size={18} className="text-gray-400 group-hover:text-accent transition-colors" />
-                        <span className="text-sm font-medium">View Universe</span>
-                    </button>
                     <button
                         onClick={createProject}
                         className="w-full h-10 flex items-center gap-3 px-4 bg-gray-800 hover:bg-gray-700 text-gray-200 hover:text-white rounded-full transition-all duration-200 border border-transparent hover:border-accent/30 group shadow-lg"
@@ -125,6 +129,9 @@ export function MainLayout() {
 
                 {/* History Section */}
                 <div className="flex-1 overflow-y-auto px-2 py-2 custom-scrollbar">
+                    <div className="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        Recent
+                    </div>
                     <div className="space-y-1">
                         {projects.length === 0 ? (
                             <div className="px-3 py-2 text-sm text-gray-500 italic">No history yet</div>
@@ -193,182 +200,165 @@ export function MainLayout() {
                 )}
             </AnimatePresence>
 
-            {/* Float Back Button (When Universe Expanded) */}
-            <AnimatePresence>
-                {viewMode === 'constellation' && (
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 20 }}
-                        className="absolute bottom-10 left-1/2 -translate-x-1/2 z-50 pointer-events-auto"
-                    >
-                        <button
-                            onClick={() => setViewMode('chat')}
-                            className="flex items-center gap-2 px-6 py-3 bg-black/60 backdrop-blur-xl border border-white/10 rounded-full text-white hover:bg-accent hover:text-black transition-all shadow-2xl group"
-                        >
-                            <MessageSquare size={18} className="group-hover:scale-110 transition-transform" />
-                            <span className="font-medium">Open Chat</span>
-                        </button>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            {/* Intentionally removed floating 'Open Chat' button for immersive experience. Use ESC to return. */}
 
             {/* LAYER 2: Main Chat Area (Center) */}
-            <AnimatePresence>
-                {viewMode === 'chat' && (
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.3 } }}
-                        className={clsx(
-                            "absolute inset-y-0 right-0 z-10 flex flex-col transition-all duration-300 pointer-events-none",
-                            isSidebarOpen ? "md:left-[280px] w-full md:w-[calc(100%-280px)]" : "left-0 w-full"
-                        )}
-                    >
-                        {/* Top Bar (Sticky) */}
-                        <div className="sticky top-0 w-full h-16 flex items-center justify-center pointer-events-auto z-20">
-                            <button className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-white/5 transition-colors text-gray-300 hover:text-white group backdrop-blur-sm">
-                                <span className="text-lg font-medium group-hover:text-accent transition-colors">Sidera</span>
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-accent/20 text-accent border border-accent/20">Alpha 1.0</span>
-                            </button>
-                        </div>
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{
+                    opacity: viewMode === 'chat' ? 1 : 0,
+                    pointerEvents: viewMode === 'chat' ? 'auto' : 'none'
+                }}
+                transition={{ duration: 0.3, ease: "easeInOut" }}
+                style={{ willChange: 'opacity' }}
+                className={clsx(
+                    "absolute inset-y-0 right-0 z-10 flex flex-col transition-all duration-300 pointer-events-none",
+                    isSidebarOpen ? "md:left-[280px] w-full md:w-[calc(100%-280px)]" : "left-0 w-full"
+                )}
+            >
+                {/* Top Bar (Sticky) */}
+                <div className={clsx("sticky top-0 w-full h-16 flex items-center justify-center z-20 transition-none", viewMode === 'chat' ? "pointer-events-auto" : "pointer-events-none")}>
+                    <button className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-white/5 transition-colors text-gray-300 hover:text-white group backdrop-blur-sm">
+                        <span className="text-lg font-medium group-hover:text-accent transition-colors">Sidera</span>
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-accent/20 text-accent border border-accent/20">Alpha 1.0</span>
+                    </button>
+                </div>
 
-                        {/* Chat Content */}
-                        <div className="flex-1 overflow-y-auto w-full custom-scrollbar pointer-events-auto">
-                            <div className="w-full max-w-3xl mx-auto flex flex-col gap-6 px-4 pb-48 pt-4">
-                                {nodes.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-8 animate-fade-in-up">
-                                        <div className="relative w-20 h-20">
-                                            <div className="absolute inset-0 bg-accent/30 rounded-full blur-xl animate-pulse-slow"></div>
-                                            <div className="relative w-full h-full rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 border border-white/10 flex items-center justify-center shadow-2xl overflow-hidden glass-panel">
-                                                <div className="absolute inset-0 bg-gradient-to-tr from-accent/10 to-transparent"></div>
-                                                <Sparkles className="w-10 h-10 text-accent relative z-10" />
-                                            </div>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <h1 className="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-200 to-gray-400">
-                                                Hello, Traveller
-                                            </h1>
-                                            <p className="text-xl text-gray-400 font-light">How can I help you explore the universe today?</p>
-                                        </div>
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-full max-w-3xl mt-4">
-                                            {[
-                                                { t: 'Structure of a black hole', i: '⚫' },
-                                                { t: 'Nearest star system', i: '⭐' },
-                                                { t: 'Explain dark matter', i: '🌌' }
-                                            ].map((item, i) => (
-                                                <button
-                                                    key={i}
-                                                    onClick={() => setInputValue(item.t)}
-                                                    className="p-4 rounded-xl bg-gray-800/40 hover:bg-gray-700/60 border border-white/5 hover:border-accent/20 text-left transition-all group backdrop-blur-sm"
-                                                >
-                                                    <div className="text-lg mb-2">{item.i}</div>
-                                                    <div className="text-sm text-gray-300 group-hover:text-white">{item.t}</div>
-                                                </button>
-                                            ))}
-                                        </div>
+                {/* Chat Content */}
+                <div className={clsx("flex-1 overflow-y-auto w-full custom-scrollbar transition-none", viewMode === 'chat' ? "pointer-events-auto" : "pointer-events-none")}>
+                    <div className="w-full max-w-3xl mx-auto flex flex-col gap-6 px-4 pb-48 pt-4">
+                        {nodes.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-8 animate-fade-in-up">
+                                <div className="relative w-20 h-20">
+                                    <div className="absolute inset-0 bg-accent/30 rounded-full blur-xl animate-pulse-slow"></div>
+                                    <div className="relative w-full h-full rounded-2xl bg-gradient-to-br from-gray-800 to-gray-900 border border-white/10 flex items-center justify-center shadow-2xl overflow-hidden glass-panel">
+                                        <div className="absolute inset-0 bg-gradient-to-tr from-accent/10 to-transparent"></div>
+                                        <Sparkles className="w-10 h-10 text-accent relative z-10" />
                                     </div>
-                                ) : (
-                                    nodes.map((node) => (
-                                        <div key={node.id} className="w-full flex flex-col gap-6 animate-fade-in">
-                                            <div className="flex justify-end">
-                                                <div className="max-w-[85%] md:max-w-[75%] bg-gray-800 rounded-[20px] rounded-tr-sm px-6 py-4 text-gray-100 shadow-md border border-white/5 leading-relaxed">
-                                                    {node.question}
-                                                </div>
-                                            </div>
-                                            <div className="flex gap-4">
-                                                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center flex-shrink-0 mt-1 shadow-lg ring-1 ring-white/10">
-                                                    <Sparkles size={16} className="text-white" />
-                                                </div>
-                                                <div className="flex-1 space-y-2 py-1">
-                                                    <div className="text-sm font-medium text-gray-400 mb-1">Sidera AI</div>
-                                                    <div className="prose prose-invert max-w-none text-gray-100 leading-7 text-[16px]">
-                                                        {node.isPending ? (
-                                                            <div className="flex items-center gap-2 text-gray-400 italic">
-                                                                <span className="w-1.5 h-1.5 rounded-full bg-accent/80 animate-bounce"></span>
-                                                                <span className="w-1.5 h-1.5 rounded-full bg-accent/80 animate-bounce delay-100"></span>
-                                                                <span className="w-1.5 h-1.5 rounded-full bg-accent/80 animate-bounce delay-200"></span>
-                                                                <span className="ml-2 text-sm text-accent">Observing the cosmos...</span>
-                                                            </div>
-                                                        ) : (
-                                                            node.answer
-                                                        )}
-                                                    </div>
-                                                    {node.keywords && node.keywords.length > 0 && (
-                                                        <div className="flex gap-2 mt-4 flex-wrap">
-                                                            {node.keywords.map((k, idx) => (
-                                                                <span key={idx} className="text-xs px-2.5 py-1 rounded-full bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 transition-colors cursor-default">
-                                                                    #{k}
-                                                                </span>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                                <div ref={chatEndRef} />
-                            </div>
-                        </div>
-
-                        {/* Input Area (Bottom Fixed) */}
-                        <div className="absolute bottom-0 left-0 right-0 p-4 pb-6 md:pb-8 pointer-events-auto z-40">
-                            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/90 to-transparent pointer-events-none h-32 -top-16"></div>
-
-                            <div className={clsx(
-                                "relative w-full max-w-3xl mx-auto transition-all duration-300"
-                            )}>
-                                <form onSubmit={handleSubmit} className="relative group">
-                                    <div className="absolute inset-0 bg-gradient-to-r from-accent/5 via-purple-500/5 to-accent/5 rounded-[28px] blur-xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-700"></div>
-
-                                    <div className="glass-input relative flex items-end gap-3 p-3 rounded-[28px] bg-gray-900/80 border border-white/10 shadow-2xl backdrop-blur-xl">
-                                        <button type="button" className="p-3 text-gray-400 hover:text-white bg-gray-800/50 hover:bg-gray-700 rounded-full transition-colors self-end mb-0.5">
-                                            <Plus size={20} />
+                                </div>
+                                <div className="space-y-2">
+                                    <h1 className="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-200 to-gray-400">
+                                        Hello, Traveller
+                                    </h1>
+                                    <p className="text-xl text-gray-400 font-light">How can I help you explore the universe today?</p>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-full max-w-3xl mt-4">
+                                    {[
+                                        { t: 'Structure of a black hole', i: '⚫' },
+                                        { t: 'Nearest star system', i: '⭐' },
+                                        { t: 'Explain dark matter', i: '🌌' }
+                                    ].map((item, i) => (
+                                        <button
+                                            key={i}
+                                            onClick={() => setInputValue(item.t)}
+                                            className="p-4 rounded-xl bg-gray-800/40 hover:bg-gray-700/60 border border-white/5 hover:border-accent/20 text-left transition-all group backdrop-blur-sm"
+                                        >
+                                            <div className="text-lg mb-2">{item.i}</div>
+                                            <div className="text-sm text-gray-300 group-hover:text-white">{item.t}</div>
                                         </button>
-
-                                        <textarea
-                                            ref={inputRef}
-                                            value={inputValue}
-                                            onChange={(e) => setInputValue(e.target.value)}
-                                            placeholder="Message Sidera..."
-                                            rows={1}
-                                            className="flex-1 bg-transparent border-none outline-none text-white placeholder-gray-500 text-lg resize-none min-h-[48px] max-h-[200px] py-3 px-2 hide-scrollbar"
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter' && !e.shiftKey) {
-                                                    e.preventDefault();
-                                                    handleSubmit(e);
-                                                }
-                                            }}
-                                        />
-
-                                        <div className="flex items-center gap-2 self-end mb-0.5">
-                                            <button type="button" className="p-3 text-gray-400 hover:text-white transition-colors hover:bg-white/5 rounded-full">
-                                                <Mic size={20} />
-                                            </button>
-                                            <button
-                                                type="submit"
-                                                className={clsx(
-                                                    "p-3 rounded-full transition-all duration-300 shadow-lg",
-                                                    inputValue.trim()
-                                                        ? "bg-white text-black hover:scale-105 hover:bg-accent hover:text-black"
-                                                        : "bg-gray-800 text-gray-600 cursor-not-allowed"
-                                                )}
-                                                disabled={!inputValue.trim()}
-                                            >
-                                                <Send size={18} className={inputValue.trim() ? "fill-current" : ""} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                </form>
-                                <div className="text-center mt-3 text-[11px] text-gray-500 font-medium tracking-wide">
-                                    Sidera employs generative AI. Verification of astronomical data is recommended.
+                                    ))}
                                 </div>
                             </div>
+                        ) : (
+                            nodes.map((node) => (
+                                <div key={node.id} className="w-full flex flex-col gap-6 animate-fade-in">
+                                    <div className="flex justify-end">
+                                        <div className="max-w-[85%] md:max-w-[75%] bg-gray-800 rounded-[20px] rounded-tr-sm px-6 py-4 text-gray-100 shadow-md border border-white/5 leading-relaxed">
+                                            {node.question}
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-4">
+                                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center flex-shrink-0 mt-1 shadow-lg ring-1 ring-white/10">
+                                            <Sparkles size={16} className="text-white" />
+                                        </div>
+                                        <div className="flex-1 space-y-2 py-1">
+                                            <div className="text-sm font-medium text-gray-400 mb-1">Sidera AI</div>
+                                            <div className="prose prose-invert max-w-none text-gray-100 leading-7 text-[16px]">
+                                                {node.isPending ? (
+                                                    <div className="flex items-center gap-2 text-gray-400 italic">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-accent/80 animate-bounce"></span>
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-accent/80 animate-bounce delay-100"></span>
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-accent/80 animate-bounce delay-200"></span>
+                                                        <span className="ml-2 text-sm text-accent">Observing the cosmos...</span>
+                                                    </div>
+                                                ) : (
+                                                    node.answer
+                                                )}
+                                            </div>
+                                            {node.keywords && node.keywords.length > 0 && (
+                                                <div className="flex gap-2 mt-4 flex-wrap">
+                                                    {node.keywords.map((k, idx) => (
+                                                        <span key={idx} className="text-xs px-2.5 py-1 rounded-full bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 transition-colors cursor-default">
+                                                            #{k}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                        <div ref={chatEndRef} />
+                    </div>
+                </div>
+
+                {/* Input Area (Bottom Fixed) */}
+                <div className={clsx("absolute bottom-0 left-0 right-0 p-4 pb-6 md:pb-8 z-40 transition-none", viewMode === 'chat' ? "pointer-events-auto" : "pointer-events-none")}>
+                    <div className="absolute inset-0 bg-gradient-to-t from-background via-background/90 to-transparent pointer-events-none h-32 -top-16"></div>
+
+                    <div className={clsx(
+                        "relative w-full max-w-3xl mx-auto transition-all duration-300"
+                    )}>
+                        <form onSubmit={handleSubmit} className="relative group">
+                            <div className="absolute inset-0 bg-gradient-to-r from-accent/5 via-purple-500/5 to-accent/5 rounded-[28px] blur-xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-700"></div>
+
+                            <div className="glass-input relative flex items-end gap-3 p-3 rounded-[28px] bg-gray-900/80 border border-white/10 shadow-2xl backdrop-blur-xl">
+                                <button type="button" className="p-3 text-gray-400 hover:text-white bg-gray-800/50 hover:bg-gray-700 rounded-full transition-colors self-end mb-0.5">
+                                    <Plus size={20} />
+                                </button>
+
+                                <textarea
+                                    ref={inputRef}
+                                    value={inputValue}
+                                    onChange={(e) => setInputValue(e.target.value)}
+                                    placeholder="Message Sidera..."
+                                    rows={1}
+                                    className="flex-1 bg-transparent border-none outline-none text-white placeholder-gray-500 text-lg resize-none min-h-[48px] max-h-[200px] py-3 px-2 hide-scrollbar"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                            e.preventDefault();
+                                            handleSubmit(e);
+                                        }
+                                    }}
+                                />
+
+                                <div className="flex items-center gap-2 self-end mb-0.5">
+                                    <button type="button" className="p-3 text-gray-400 hover:text-white transition-colors hover:bg-white/5 rounded-full">
+                                        <Mic size={20} />
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className={clsx(
+                                            "p-3 rounded-full transition-all duration-300 shadow-lg",
+                                            inputValue.trim()
+                                                ? "bg-white text-black hover:scale-105 hover:bg-accent hover:text-black"
+                                                : "bg-gray-800 text-gray-600 cursor-not-allowed"
+                                        )}
+                                        disabled={!inputValue.trim()}
+                                    >
+                                        <Send size={18} className={inputValue.trim() ? "fill-current" : ""} />
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                        <div className="text-center mt-3 text-[11px] text-gray-500 font-medium tracking-wide">
+                            Sidera employs generative AI. Verification of astronomical data is recommended.
                         </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                    </div>
+                </div>
+            </motion.div>
+
 
             {/* Hint for Constellation Mode */}
             <AnimatePresence>
@@ -387,6 +377,6 @@ export function MainLayout() {
                     </motion.div>
                 )}
             </AnimatePresence>
-        </div>
+        </div >
     )
 }

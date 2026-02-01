@@ -13,11 +13,13 @@ export const useStore = create((set, get) => ({
   isUniverseExpanded: false,
   viewMode: 'chat', // 'chat' | 'constellation'
   isLoading: false,
+  isWarping: false, // Transition effect state
   error: null,
 
   // --- UI Actions ---
   toggleUniverse: () => set(state => ({ isUniverseExpanded: !state.isUniverseExpanded })),
   setViewMode: (mode) => set({ viewMode: mode }),
+  setIsWarping: (isWarping) => set({ isWarping }),
 
   // --- Async Actions ---
 
