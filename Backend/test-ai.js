@@ -1,13 +1,13 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
-const apiKey = process.env.GOOGLE_API_KEY || 'AIzaSyDEUlHvstqZpMfVS13qnckvoAkNlcisVPs';
+const apiKey = process.env.GOOGLE_API_KEY;
 const genAI = new GoogleGenerativeAI(apiKey);
 
 const modelName = "gemma-3-27b-it";
 
 async function testAI() {
-    console.log(`Testing model: ${modelName} with Key: ${apiKey.substring(0, 10)}...`);
+    console.log(`Testing model: ${modelName} (Key Present: ${!!apiKey})`);
     try {
         const model = genAI.getGenerativeModel({
             model: modelName

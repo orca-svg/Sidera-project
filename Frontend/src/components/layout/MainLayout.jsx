@@ -5,12 +5,12 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
     Menu, Plus, MessageSquare, X, Settings,
     HelpCircle, User, Mic, Send, Paperclip,
-    Sparkles, PanelLeftClose, PanelLeftOpen
+    Sparkles, PanelLeftClose, PanelLeftOpen, Telescope
 } from 'lucide-react'
 import clsx from 'clsx'
 
 export function MainLayout() {
-    const { nodes, addNode, setActiveNode, activeNode, initializeProject, projectId } = useStore()
+    const { nodes, addNode, setActiveNode, activeNode, initializeProject, projectId, isUniverseExpanded, toggleUniverse } = useStore()
     const [inputValue, setInputValue] = useState('')
     const [isSidebarOpen, setIsSidebarOpen] = useState(true)
     const chatEndRef = useRef(null)
@@ -101,8 +101,18 @@ export function MainLayout() {
                     </button>
                 </div>
 
-                {/* New Chat Button */}
+                {/* View Mode Section */}
                 <div className="px-4 pb-4">
+                    <button
+                        onClick={() => {
+                            toggleUniverse()
+                            if (window.innerWidth < 768) setIsSidebarOpen(false)
+                        }}
+                        className="w-full h-10 flex items-center gap-3 px-4 bg-gray-800/50 hover:bg-gray-700 text-gray-200 hover:text-white rounded-full transition-all duration-200 border border-transparent hover:border-accent/30 group mb-2"
+                    >
+                        <Telescope size={18} className="text-gray-400 group-hover:text-accent transition-colors" />
+                        <span className="text-sm font-medium">View Universe</span>
+                    </button>
                     <button
                         onClick={handleNewChat}
                         className="w-full h-10 flex items-center gap-3 px-4 bg-gray-800 hover:bg-gray-700 text-gray-200 hover:text-white rounded-full transition-all duration-200 border border-transparent hover:border-accent/30 group shadow-lg"
@@ -167,7 +177,7 @@ export function MainLayout() {
 
             {/* Toggle Button (When sidebar closed) */}
             <AnimatePresence>
-                {!isSidebarOpen && (
+                {!isSidebarOpen && !isUniverseExpanded && (
                     <motion.button
                         initial={{ opacity: 0, scale: 0.9 }}
                         animate={{ opacity: 1, scale: 1 }}
@@ -180,10 +190,31 @@ export function MainLayout() {
                 )}
             </AnimatePresence>
 
+            {/* Float Back Button (When Universe Expanded) */}
+            <AnimatePresence>
+                {isUniverseExpanded && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 20 }}
+                        className="absolute bottom-10 left-1/2 -translate-x-1/2 z-50 pointer-events-auto"
+                    >
+                        <button
+                            onClick={toggleUniverse}
+                            className="flex items-center gap-2 px-6 py-3 bg-black/60 backdrop-blur-xl border border-white/10 rounded-full text-white hover:bg-accent hover:text-black transition-all shadow-2xl group"
+                        >
+                            <MessageSquare size={18} className="group-hover:scale-110 transition-transform" />
+                            <span className="font-medium">Open Chat</span>
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* LAYER 2: Main Chat Area (Center) */}
             <div className={clsx(
-                "absolute inset-y-0 right-0 z-10 flex flex-col transition-all duration-300 pointer-events-none",
-                isSidebarOpen ? "md:left-[280px] w-full md:w-[calc(100%-280px)]" : "left-0 w-full"
+                "absolute inset-y-0 right-0 z-10 flex flex-col transition-all duration-500 pointer-events-none",
+                isSidebarOpen ? "md:left-[280px] w-full md:w-[calc(100%-280px)]" : "left-0 w-full",
+                isUniverseExpanded ? "opacity-0 translate-y-10 pointer-events-none" : "opacity-100 translate-y-0"
             )}>
                 {/* Top Bar (Sticky) */}
                 <div className="sticky top-0 w-full h-16 flex items-center justify-center pointer-events-auto z-20">

@@ -25,6 +25,17 @@ const nodeSchema = new mongoose.Schema({
         max: 5,
         default: 2
     },
+    // Context Memory (Vector RAG)
+    summary: {
+        type: String,
+        required: false
+    },
+    summaryEmbedding: [{
+        type: Number
+    }],
+    fullEmbedding: [{
+        type: Number
+    }],
     // Visualization
     position: {
         x: { type: Number, default: 0 },

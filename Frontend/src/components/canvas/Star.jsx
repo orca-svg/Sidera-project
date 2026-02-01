@@ -9,20 +9,23 @@ export function Star({ position, node, isSelected, onClick }) {
     // Destructure node properties
     const { importance, keywords, question } = node
 
-    // Base size on importance (1-5) -> 0.3 to 1.0
-    const size = 0.3 + (importance * 0.15)
+    // Base size on importance (1-5) -> 0.2 to 1.5
+    // Logarithmic scale for size to emphasize importance
+    const size = 0.2 + Math.pow(importance, 1.8) * 0.05
 
-    // Color based on importance
-    // High importance (4-5) = Gold/Alpha
-    // Medium (3) = White/Beta
-    // Low (1-2) = Blueish/Satellite
+    // Color based on importance (Stellar Classification)
+    // 5 (O-Type): Blue-White, Super Bright, Massive
+    // 4 (B-Type): White-Blue, Bright
+    // 3 (G-Type): Yellow/White (Sun-like)
+    // 1-2 (M-Type): Red Dwarf, Dim
     const getColor = () => {
-        if (importance >= 4) return { color: '#FFD700', emissive: '#FFA500' }
-        if (importance === 3) return { color: '#FFFFFF', emissive: '#AAAAAA' }
-        return { color: '#A0C4FF', emissive: '#5078AA' }
+        if (importance >= 5) return { color: '#E0F0FF', emissive: '#FFFFFF', intensity: 3.0 } // Super Giant
+        if (importance === 4) return { color: '#F0F8FF', emissive: '#ADD8E6', intensity: 1.5 } // Bright Giant
+        if (importance === 3) return { color: '#FFFACD', emissive: '#F0E68C', intensity: 0.8 } // Main Sequence
+        return { color: '#FF6347', emissive: '#8B0000', intensity: 0.3 } // Red Dwarf
     }
 
-    const { color, emissive } = getColor()
+    const { color, emissive, intensity } = getColor()
 
     useFrame((state, delta) => {
         if (meshRef.current) {
@@ -45,7 +48,7 @@ export function Star({ position, node, isSelected, onClick }) {
                 <meshStandardMaterial
                     color={color}
                     emissive={emissive}
-                    emissiveIntensity={isSelected || hovered ? 2 : 0.5}
+                    emissiveIntensity={(isSelected || hovered ? 2 : 0.5) * (intensity || 1)}
                     roughness={0.2}
                     metalness={0.8}
                 />

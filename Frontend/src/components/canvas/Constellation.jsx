@@ -9,7 +9,7 @@ export function Constellation({ start, end, type }) {
     const getLineProps = () => {
         switch (type) {
             case 'solid': return { color: '#FFFFFF', opacity: 0.6, dash: false }
-            case 'dotted': return { color: '#AAAAAA', opacity: 0.4, dash: true }
+            case 'dashed': return { color: '#8899AA', opacity: 0.3, dash: true } // Recall Link
             case 'warp': return { color: '#00FFFF', opacity: 0.8, dash: false } // Cyan warp
             default: return { color: '#FFFFFF', opacity: 0.5, dash: false }
         }
