@@ -222,10 +222,17 @@ export function MainLayout() {
                     opacity: viewMode === 'chat' ? 1 : 0,
                     pointerEvents: viewMode === 'chat' ? 'auto' : 'none'
                 }}
-                transition={{ duration: 0.3, ease: "easeInOut" }}
+                transition={{
+                    duration: 0.5,
+                    ease: "easeInOut",
+                    // Delay appearance by 1.0s to match Warp Animation duration
+                    delay: viewMode === 'chat' ? 1.0 : 0
+                }}
                 style={{ willChange: 'opacity' }}
                 className={clsx(
                     "absolute inset-y-0 right-0 z-10 flex flex-col transition-all duration-300 pointer-events-none",
+                    // Apply opacity-0 instantly via class when in constellation mode to ensure Warp visibility
+                    viewMode === 'constellation' && "opacity-0",
                     isSidebarOpen ? "md:left-[280px] w-full md:w-[calc(100%-280px)]" : "left-0 w-full"
                 )}
             >
@@ -318,11 +325,13 @@ export function MainLayout() {
 
                 {/* Input Area (Bottom Fixed) */}
                 <div className={clsx("absolute bottom-0 left-0 right-0 p-4 pb-6 md:pb-8 z-40 transition-none", viewMode === 'chat' ? "pointer-events-auto" : "pointer-events-none")}>
-                    <div className="absolute inset-0 bg-gradient-to-t from-background via-background/90 to-transparent pointer-events-none h-32 -top-16"></div>
 
                     <div className={clsx(
                         "relative w-full max-w-3xl mx-auto transition-all duration-300"
                     )}>
+                        {/* Gradient Mask: Constrained to Center Column (User Request) */}
+                        {/* Hides scrolling text BEHIND the input box, but keeps Left/Right sides transparent for stars */}
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-background via-background/90 to-transparent pointer-events-none h-48 -bottom-8 z-[-1]"></div>
                         <form onSubmit={handleSubmit} className="relative group">
                             <div className="absolute inset-0 bg-gradient-to-r from-accent/5 via-purple-500/5 to-accent/5 rounded-[28px] blur-xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-700"></div>
 
@@ -372,19 +381,22 @@ export function MainLayout() {
                 </div>
             </motion.div>
 
-            {/* Hint for Constellation Mode */}
+            {/* Hint for Constellation Mode - Repositioned: Fixed, Centered in Main Content */}
             <AnimatePresence>
                 {viewMode === 'constellation' && (
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 20 }}
-                        className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+                        className={clsx(
+                            "fixed bottom-8 right-0 z-50 pointer-events-none flex justify-center transition-all duration-300 ease-in-out",
+                            isSidebarOpen ? "md:left-[280px] w-full md:w-[calc(100%-280px)]" : "left-0 w-full"
+                        )}
                     >
                         <div className="px-6 py-3 rounded-full bg-black/50 backdrop-blur-xl border border-white/10 text-white text-sm flex items-center gap-3 shadow-2xl">
                             <div className="w-2 h-2 rounded-full bg-accent animate-pulse"></div>
                             <span>Constellation Mode Active</span>
-                            <span className="text-gray-400 border-l border-white/20 pl-3 ml-1">Press ESC to return</span>
+                            <span className="text-gray-400 border-l border-white/20 pl-3 ml-1">Press <span className="font-bold text-white">ESC</span> to return</span>
                         </div>
                     </motion.div>
                 )}

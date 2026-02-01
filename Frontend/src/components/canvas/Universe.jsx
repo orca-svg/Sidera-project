@@ -83,11 +83,12 @@ export function Universe({ isInteractive = true }) {
         // 2. Camera Movement
         if (viewMode === 'constellation') {
             // Warp INTO the universe (Detailed View)
-            // Move closer to [0,0,5]
-            cameraControlsRef.current.setLookAt(0, 0, 5, 0, 0, 0, true)
+            // Move to Overview Position (Forward motion: 120 -> 40)
+            cameraControlsRef.current.setLookAt(0, 0, 40, 0, 0, 0, true)
         } else {
-            // Warp OUT to chat (Overview/Distant View)
-            cameraControlsRef.current.setLookAt(0, 0, 15, 0, 0, 0, true)
+            // Warp OUT to chat (Deep Space View)
+            // Move far back to create "Approach" feel when returning
+            cameraControlsRef.current.setLookAt(0, 0, 120, 0, 0, 0, true)
         }
 
         // 3. End Warp (after animation duration)
@@ -95,13 +96,13 @@ export function Universe({ isInteractive = true }) {
         // We set a slightly longer warp for effect.
         const timer = setTimeout(() => {
             setIsWarping(false)
-        }, 1200)
+        }, 1000)
 
         return () => clearTimeout(timer)
     }, [viewMode, setIsWarping])
 
     return (
-        <Canvas camera={{ position: [0, 0, 15], fov: 60 }} style={{ height: '100%', width: '100%', background: '#050510' }}>
+        <Canvas camera={{ position: [0, 0, 120], fov: 60 }} style={{ height: '100%', width: '100%', background: '#050510' }}>
             <ambientLight intensity={0.5} />
             <pointLight position={[10, 10, 10]} intensity={1} />
 
@@ -110,7 +111,7 @@ export function Universe({ isInteractive = true }) {
 
             <InteractiveBackground>
                 {/* Layer 1: Persistent Background Stars (Always visible with Parallax) */}
-                <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
+                <Stars radius={300} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
 
                 {/* Layer 2: Construct/Knowledge Graph (Visible only in Constellation Mode) */}
                 <AnimatedUniverse>
