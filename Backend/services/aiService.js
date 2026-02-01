@@ -17,57 +17,96 @@ const model = genAI.getGenerativeModel({
     // generationConfig: { responseMimeType: "application/json" } // Not supported by Gemma 3 yet
 });
 
-async function generateResponse(prompt) {
+// Helper to safely parse AI JSON response
+const parseAIResponse = (text) => {
+    try {
+        // 1. Remove markdown code blocks (```json ... ```)
+        const cleanText = text
+            .replace(/```json\n|\n```/g, '')
+            .replace(/```/g, '')
+            .replace(/\/\/.*$/gm, '') // Remove single-line comments
+            .replace(/\/\*[\s\S]*?\*\//g, '') // Remove block comments
+            .trim();
+
+        // 2. Attempt Parse
+        return JSON.parse(cleanText);
+    } catch (error) {
+        console.error("❌ JSON Parse Failed. Raw Text:", text);
+        // 3. Fallback
+        return {
+            answer: text, // Show original text so user sees the answer at least
+            keywords: ["Analysis Failed"],
+            importance: "Beta", // Force it to appear in Topic List
+            topicSummary: "Topic Analysis Failed",
+            title: null
+        };
+    }
+};
+
+async function generateResponse(prompt, isFirstMessage = false) {
     try {
         if (!apiKey) {
             console.error("[AI Generation Error] No API Key available.");
             return {
-                answer: "I cannot think right now because my API Key is missing. Please configure the .env file.",
-                keywords: ["System Error"],
-                importance: 5
+                answer: "API Key missing.",
+                keywords: ["Error"],
+                importance: "Satellite",
+                topicSummary: "System Error",
+                title: null
             };
         }
 
-        const fullPrompt = `
-      You are a helpful assistant. 
-      Analyze the user's input and provide a helpful response.
-      Also extract 1-3 short keywords (noun phrases) that represent the core topic.
-      Rate the importance of this input/topic from 1 to 5 (1=Trivial, 3=Standard, 5=Crucial/Milestone).
+        // 1. Response Generation Prompt
+        const responsePrompt = `
+      You are a JSON generator. You must respond with valid JSON only.
       
+      Conversation Status: ${isFirstMessage ? "START OF NEW CHAT (Generate a Title!)" : "ONGOING CHAT"}
       User Input: "${prompt}"
-      
-      Respond STRICTLY in this JSON format:
+
+      MANDATORY: Respond with this exact JSON structure (no markdown, no comments):
       {
-        "answer": "Your detailed response here...",
-        "keywords": ["keyword1", "keyword2"],
-        "importance": 3
+        "answer": "String (Markdown supported)",
+        "importance": "Alpha" | "Beta" | "Satellite",
+        "topicSummary": "String (Max 5 words)",
+        "title": "String (Project title if Status is 'START OF NEW CHAT', else null)"
       }
+      
+      Definitions:
+      - Alpha (Priority 1): 
+        * Project Initialization (Core Idea)
+        * Major Pivot or Completely New Topic
+        * User explicitly emphasizes importance
+      - Beta (Priority 2):
+        * Detailed explanation of an Alpha node
+        * Code examples or implementation steps
+        * Specific sub-concepts
+      - Satellite (Priority 3):
+        * Chit-chat, greetings, short confirmations
+        * Context maintenance (e.g., "Yes", "Okay", "Tell me more")
     `;
 
-        const result = await model.generateContent(fullPrompt);
+        const result = await model.generateContent(responsePrompt);
         const response = await result.response;
         const text = response.text();
-        console.log(`[AI Raw Text]`, text);
 
-        // Safety parse
-        try {
-            // Remove markdown code blocks if present
-            const jsonText = text.replace(/```json\n|\n```/g, '').replace(/```/g, '');
-            return JSON.parse(jsonText);
-        } catch (e) {
-            console.error("JSON Parse Error:", text);
-            return {
-                answer: text, // Fallback
-                keywords: ["Thought"],
-                importance: 2
-            };
+        // 2. Robust Parsing
+        const data = parseAIResponse(text);
+
+        // 3. Fallbacks for missing fields
+        if (!data.topicSummary) {
+            data.topicSummary = (data.keywords && data.keywords.length > 0) ? data.keywords[0] : "Topic Node";
         }
+        if (!data.importance) data.importance = "Satellite";
+
+        return data;
+
     } catch (error) {
         console.error("AI Generation Error:", error);
         return {
             answer: "I am unable to contemplate that at the moment.",
             keywords: ["Error"],
-            importance: 1
+            importance: "Satellite",
+            topicSummary: "Error"
         };
     }
 }

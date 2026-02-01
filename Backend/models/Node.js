@@ -20,10 +20,12 @@ const nodeSchema = new mongoose.Schema({
         type: String
     }],
     importance: {
-        type: Number,
-        min: 1,
-        max: 5,
-        default: 2
+        type: String,
+        enum: ['Alpha', 'Beta', 'Satellite'],
+        default: 'Satellite'
+    },
+    topicSummary: {
+        type: String // Short summary for Topic Flow
     },
     // Visualization
     position: {

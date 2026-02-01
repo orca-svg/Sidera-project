@@ -26,26 +26,40 @@ router.post('/', async (req, res) => {
             if (parent) parentPos = parent.position;
         }
 
-        // 2. Call AI Service to get Answer, Keywords, Importance
-        console.log(`[AI Interaction] Generating response for: "${message}"...`);
-        const aiData = await generateResponse(message);
-        console.log(`[AI Response]`, JSON.stringify(aiData, null, 2));
+        // 2. Check if it's the first message (for Title Generation)
+        const nodeCount = await Node.countDocuments({ projectId });
+        const isFirstMessage = (nodeCount === 0);
 
-        // 3. Create Single Node (Question + Answer)
+        // 3. Call AI Service
+        console.log(`[AI Interaction] Generating response for: "${message}" (First: ${isFirstMessage})...`);
+        const aiData = await generateResponse(message, isFirstMessage);
+
+        // 4. Update Project Title if generated
+        let projectTitle = null;
+        if (isFirstMessage && aiData.title) {
+            projectTitle = aiData.title;
+            const Project = require('../models/Project');
+            console.log(`[Project] Updating Title for ${projectId} to: "${projectTitle}"`);
+            // Ensure DB update
+            await Project.findByIdAndUpdate(projectId, { name: projectTitle, updatedAt: Date.now() }, { new: true });
+        }
+
+        // 5. Create Single Node
         const newNode = new Node({
             projectId,
             question: message,
             answer: aiData.answer,
             keywords: aiData.keywords || [],
-            importance: aiData.importance || 2,
+            importance: aiData.importance || 'Satellite',
+            topicSummary: aiData.topicSummary,
             position: calculatePosition(parentPos)
         });
         await newNode.save();
 
-        // 4. Create Edge from Previous Node -> New Node
+        // 6. Create Edge
         let newEdge = null;
         if (parentNodeId) {
-            const edgeType = (aiData.importance >= 4) ? 'solid' : 'solid';
+            const edgeType = (aiData.importance === 'Alpha') ? 'solid' : 'default'; // Simply distinguishing visual style
 
             newEdge = new Edge({
                 projectId,
@@ -58,7 +72,8 @@ router.post('/', async (req, res) => {
 
         res.json({
             node: newNode,
-            edge: newEdge
+            edge: newEdge,
+            projectTitle: projectTitle // Return new title to frontend
         });
 
     } catch (err) {

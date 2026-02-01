@@ -1,174 +1,201 @@
 import { create } from 'zustand'
-import { v4 as uuidv4 } from 'uuid'
+import client from '../api/client'
 
 export const useStore = create((set, get) => ({
-  // State
-  projects: [], // [{ id, title, stars: [], edges: [], lastUpdated }]
+  // --- State ---
+  projects: [],        // Sidebar Project List
   activeProjectId: null,
 
-  // Derived View State (for UI to render current stars)
-  nodes: [],
-  edges: [],
-  mode: 'formation',
-  activeNode: null,
+  nodes: [],           // Current Conversation Nodes (Stars)
+  edges: [],           // Connections (optional visual)
+  activeNode: null,    // Currently focused node (for camera comparison etc)
 
-  // UI State
   isUniverseExpanded: false,
+  viewMode: 'chat', // 'chat' | 'constellation'
+  isLoading: false,
+  error: null,
+
+  // --- UI Actions ---
   toggleUniverse: () => set(state => ({ isUniverseExpanded: !state.isUniverseExpanded })),
+  setViewMode: (mode) => set({ viewMode: mode }),
 
-  // --- Actions ---
+  // --- Async Actions ---
 
-  // 1. Create New Project (New Chat)
-  createProject: async () => {
-    const newId = uuidv4();
-    const newProject = {
-      id: newId,
-      title: 'New Conversation',
-      stars: [], // Nodes (stars) for this project
-      edges: [],
-      lastUpdated: new Date().toISOString()
-    };
-
-    set(state => ({
-      projects: [newProject, ...state.projects],
-      activeProjectId: newId,
-      // Reset View
-      nodes: [],
-      edges: [],
-      activeNode: null
-    }));
-
-    // Optional: Call backend to persist if needed
-    // await get().initializeProjectBackend(newId); 
-    return newId;
-  },
-
-  // 2. Switch Conversation
-  setActiveProject: (id) => {
-    const { projects } = get();
-    const project = projects.find(p => p.id === id);
-    if (project) {
-      set({
-        activeProjectId: id,
-        nodes: project.stars || [],
-        edges: project.edges || [],
-        activeNode: null
-      });
-    }
-  },
-
-  // Backend Init Helper
-  initializeProjectBackend: async (localId) => {
+  // 1. Fetch Project List (Sidebar)
+  fetchProjects: async () => {
+    set({ isLoading: true, error: null });
     try {
-      console.log("[useStore] initializing backend project...");
-      const res = await fetch('http://localhost:5001/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'My Constellation', localId })
-      });
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const project = await res.json();
-      console.log("[useStore] initialized backend project:", project._id);
-      return project._id;
+      const res = await client.get('/projects');
+      // Map API response to UI format
+      const projects = res.data.map(p => ({
+        id: p._id,
+        title: p.name,
+        lastUpdated: p.updatedAt || p.createdAt
+      }));
+      // Sort by latest msg? typically backend does this, or we sort here
+      projects.sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated));
+
+      set({ projects, isLoading: false });
     } catch (err) {
-      console.error("Failed to init project backend", err);
-      return null;
+      console.error("[Store] fetchProjects Error:", err);
+      set({ error: "Failed to load projects", isLoading: false });
     }
   },
 
-  // Initialize App (Called on mount)
-  initializeProject: async () => {
-    // If no projects, create one
-    if (get().projects.length === 0) {
-      await get().createProject();
+  // 2. Create New Project (New Chat)
+  createProject: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const res = await client.post('/projects', { name: "New Conversation" });
+      const newProjectRaw = res.data;
+
+      const newProject = {
+        id: newProjectRaw._id,
+        title: newProjectRaw.name,
+        lastUpdated: newProjectRaw.createdAt
+      };
+
+      set(state => ({
+        projects: [newProject, ...state.projects],
+        activeProjectId: newProject.id,
+        nodes: [],   // Clear current view
+        edges: [],
+        activeNode: null,
+        isLoading: false
+      }));
+    } catch (err) {
+      console.error("[Store] createProject Error:", err);
+      set({ error: "Failed to create project", isLoading: false });
     }
   },
 
+  // 3. Set Active Project & Load History (The "History Loading" Logic)
+  setActiveProject: async (projectId) => {
+    // 1. Immediate State Update (Clear current view)
+    set({ activeProjectId: projectId, isLoading: true, error: null, activeNode: null, nodes: [] });
+
+    try {
+      // 2. Fetch Nodes for this Project
+      const res = await client.get(`/nodes/${projectId}`);
+      const fetchedNodes = res.data;
+
+      // 3. Map DB format to Frontend format
+      if (!Array.isArray(fetchedNodes)) {
+        console.error("fetchedNodes is not an array:", fetchedNodes);
+        throw new Error("Invalid response format");
+      }
+
+      const mappedNodes = fetchedNodes.map(n => ({
+        id: n._id,
+        projectId: n.projectId,
+        question: n.question,
+        answer: n.answer,
+        keywords: n.keywords || [],
+        importance: n.importance || 'Beta',
+        topicSummary: n.topicSummary,
+        // Safety check for position
+        position: (n.position && typeof n.position.x === 'number')
+          ? [n.position.x, n.position.y, n.position.z]
+          : [0, 0, 0],
+        createdAt: n.createdAt
+      }));
+
+      // 4. Update Store
+      set({ nodes: mappedNodes, isLoading: false });
+
+      console.log(`[Store] Loaded ${mappedNodes.length} nodes for project ${projectId}`);
+
+    } catch (err) {
+      console.error("[Store] setActiveProject Error:", err);
+      set({ error: "Failed to load conversation history", isLoading: false });
+    }
+  },
+
+  // 4. Send Message & Instant Title Update
   addNode: async (content) => {
-    const { activeProjectId, projects, nodes, activeNode } = get();
+    const { activeProjectId, nodes, activeNode } = get();
 
-    // If no active project, create one first
+    // Auto-create project if missing
     if (!activeProjectId) {
       await get().createProject();
+      // Retry after creation? createProject sets activeProjectId
+      // We can continue with get().activeProjectId
     }
+    const currentProjectId = get().activeProjectId;
 
-    console.log("[useStore] addNode:", content);
-
-    // 1. Optimistic Update
+    // Optimistic Update (Temp UI)
     const tempId = 'temp-' + Date.now();
     const tempNode = {
       id: tempId,
       question: content,
       answer: 'Thinking...',
       keywords: ['...'],
-      position: [0, 0, 0],
+      position: [0, 0, 0], // Temp
       isPending: true
     };
+    set({ nodes: [...nodes, tempNode], activeNode: tempId });
 
-    const updatedNodes = [...nodes, tempNode];
-
-    // Update VIEW and PROJECT state
-    set(state => ({
-      nodes: updatedNodes,
-      activeNode: tempId,
-      projects: state.projects.map(p =>
-        p.id === state.activeProjectId
-          ? { ...p, stars: updatedNodes, lastUpdated: new Date().toISOString() }
-          : p
-      )
-    }));
-
-    // 2. Call Chat API
     try {
-      const res = await fetch('http://localhost:5001/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId: activeProjectId,
-          message: content,
-          parentNodeId: activeNode && !activeNode.startsWith('temp-') ? activeNode : null
-        })
+      // API Call
+      const res = await client.post('/chat', {
+        projectId: currentProjectId,
+        message: content,
+        parentNodeId: activeNode && !activeNode.startsWith('temp-') ? activeNode : null
       });
 
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const data = await res.json();
+      const { node: savedNode, edge: savedEdge, projectTitle } = res.data;
 
-      const formatNode = (n) => ({
-        ...n,
-        id: n._id || uuidv4(),
-        position: n.position ? [n.position.x, n.position.y, n.position.z] : [0, 0, 0]
-      });
+      // Map Real Node
+      const realNode = {
+        ...savedNode,
+        id: savedNode._id,
+        position: [savedNode.position.x, savedNode.position.y, savedNode.position.z]
+      };
 
-      const newNode = formatNode(data.node);
+      // 1. Replace Temp Node with Real Node
+      const finalNodes = get().nodes.map(n => n.id === tempId ? realNode : n);
 
-      // Update Title if it's the first node
-      let titleUpdate = {};
-      if (nodes.length === 0) {
-        titleUpdate = { title: content.substring(0, 30) + (content.length > 30 ? '...' : '') };
+      // 2. Instant Title Update (Sidebar Sync) -- Robust Local Update
+      let updatedProjects = get().projects;
+      if (projectTitle) {
+        console.log("🎨 [Store] Instant Title Update to:", projectTitle);
+        // Map to a NEW array to ensure React re-render
+        updatedProjects = updatedProjects.map(p => {
+          if (p.id === currentProjectId) {
+            return { ...p, title: projectTitle };
+          }
+          return p;
+        });
       }
 
-      // 3. Replace Temp Node with Real Node
-      const finalNodes = get().nodes.map(n => n.id === tempId ? newNode : n);
-
-      set(state => ({
+      set({
         nodes: finalNodes,
-        activeNode: newNode.id,
-        projects: state.projects.map(p =>
-          p.id === state.activeProjectId
-            ? { ...p, ...titleUpdate, stars: finalNodes, lastUpdated: new Date().toISOString() }
-            : p
-        )
-      }));
+        activeNode: realNode.id,
+        edges: savedEdge ? [...(get().edges || []), { ...savedEdge, id: savedEdge._id }] : get().edges,
+        projects: updatedProjects
+      });
 
     } catch (err) {
-      console.error("Chat API Error", err);
+      console.error("[Store] addNode Error:", err);
       set(state => ({
         nodes: state.nodes.map(n =>
-          n.id === tempId ? { ...n, answer: "Error connecting to the stars.", isPending: false } : n
+          n.id === tempId ? { ...n, answer: "Failed to get response.", isPending: false } : n
         )
       }));
     }
   },
 
   setActiveNode: (id) => set({ activeNode: id }),
+
+  // Initial App Load
+  initializeProject: async () => {
+    await get().fetchProjects();
+    const { projects } = get();
+    if (projects.length === 0) {
+      await get().createProject();
+    } else {
+      // Load latest
+      await get().setActiveProject(projects[0].id);
+    }
+  }
 }))

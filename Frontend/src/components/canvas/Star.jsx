@@ -1,78 +1,125 @@
 import { useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { Html, Sphere, Sparkles } from '@react-three/drei'
+import { Html, Sphere, Sparkles, MeshDistortMaterial } from '@react-three/drei'
+import { useStore } from '../../store/useStore'
+import * as THREE from 'three'
 
 export function Star({ position, node, isSelected, onClick }) {
     const meshRef = useRef()
+    const haloRef = useRef()
     const [hovered, setHover] = useState(false)
+    const { viewMode } = useStore() // Access View Mode
 
     // Destructure node properties
-    const { importance, keywords, question } = node
+    const { importance, keywords, question, topicSummary } = node
 
-    // Base size on importance (1-5) -> 0.3 to 1.0
-    const size = 0.3 + (importance * 0.15)
+    // Realistic Size Adjustment (Much smaller!)
+    // Alpha: 0.15, Beta: 0.08, Satellite: 0.04
+    const isAlpha = importance === 'Alpha' || importance >= 4
+    const isBeta = importance === 'Beta' || importance === 3
 
-    // Color based on importance
-    // High importance (4-5) = Gold/Alpha
-    // Medium (3) = White/Beta
-    // Low (1-2) = Blueish/Satellite
+    let baseSize = 0.04
+    if (isAlpha) baseSize = 0.15
+    else if (isBeta) baseSize = 0.08
+
+    // Cyberpunk Color Palette
     const getColor = () => {
-        if (importance >= 4) return { color: '#FFD700', emissive: '#FFA500' }
-        if (importance === 3) return { color: '#FFFFFF', emissive: '#AAAAAA' }
-        return { color: '#A0C4FF', emissive: '#5078AA' }
+        if (isAlpha) return { color: '#FFD700', emissive: '#FFaa00', intensity: 4.0 } // Gold (High Intensity)
+        if (isBeta) return { color: '#00FFFF', emissive: '#0088FF', intensity: 2.5 } // Cyan
+        return { color: '#ffffff', emissive: '#505050', intensity: 1.5 } // White
     }
 
-    const { color, emissive } = getColor()
+    const { color, emissive, intensity } = getColor()
 
     useFrame((state, delta) => {
         if (meshRef.current) {
-            meshRef.current.rotation.y += delta * 0.2
-            // Pulse if selected or important
-            if (isSelected || importance >= 4) {
-                const speed = isSelected ? 3 : 1
-                const scale = 1 + Math.sin(state.clock.elapsedTime * speed) * 0.05
-                meshRef.current.scale.set(scale, scale, scale)
-            }
+            meshRef.current.rotation.y += delta * 0.5
+            // Pulse logic
+            const t = state.clock.elapsedTime
+            const pulse = Math.sin(t * (isSelected ? 3 : 1)) * 0.1
+            const scale = (isSelected || hovered) ? 1.5 + pulse : 1 + pulse
+            meshRef.current.scale.set(scale, scale, scale)
+        }
+        if (haloRef.current) {
+            haloRef.current.rotation.x += delta * 0.2
+            haloRef.current.rotation.z += delta * 0.2
         }
     })
 
+    // Label Logic: Show in Constellation Mode OR on Hover/Select
+    const showLabel = hovered || isSelected || (viewMode === 'constellation' && isAlpha);
+
     return (
         <group position={position} onClick={onClick}>
-            <Sphere ref={meshRef} args={[size, 32, 32]}
-                onPointerOver={() => setHover(true)}
-                onPointerOut={() => setHover(false)}
+            {/* Core Star */}
+            <Sphere ref={meshRef} args={[baseSize, 32, 32]}
+                onPointerOver={(e) => { e.stopPropagation(); setHover(true); }}
+                onPointerOut={(e) => setHover(false)}
             >
-                <meshStandardMaterial
-                    color={color}
-                    emissive={emissive}
-                    emissiveIntensity={isSelected || hovered ? 2 : 0.5}
-                    roughness={0.2}
-                    metalness={0.8}
-                />
+                {isAlpha ? (
+                    <MeshDistortMaterial
+                        color={color}
+                        emissive={emissive}
+                        emissiveIntensity={isSelected || hovered ? intensity * 2 : intensity}
+                        roughness={0.1}
+                        metalness={0.9}
+                        distort={0.4}
+                        speed={2}
+                    />
+                ) : (
+                    <meshPhysicalMaterial
+                        color={color}
+                        emissive={emissive}
+                        emissiveIntensity={intensity}
+                        roughness={0.1}
+                        metalness={0.1}
+                        transmission={0.9} // Very transparent glass for small stars
+                        thickness={0.5}
+                    />
+                )}
             </Sphere>
 
-            {/* Glow for high importance */}
-            {importance >= 4 && (
-                <Sparkles count={importance * 5} scale={size * 4} size={2} speed={0.4} opacity={0.5} color={color} />
+            {/* Halo for Alpha Stars */}
+            {isAlpha && (
+                <Sphere ref={haloRef} args={[baseSize * 3, 16, 16]}>
+                    <meshBasicMaterial
+                        color={emissive}
+                        transparent
+                        opacity={0.1}
+                        wireframe
+                    />
+                </Sphere>
             )}
 
-            {/* Label: Keywords only */}
-            {(hovered || isSelected) && (
-                <Html distanceFactor={10} position={[0, size + 0.5, 0]}>
-                    <div style={{
-                        color: 'white',
-                        background: 'rgba(0,0,0,0.8)',
-                        padding: '6px 10px',
-                        borderRadius: '6px',
-                        whiteSpace: 'nowrap',
-                        border: `1px solid ${color}`,
-                        textAlign: 'center',
-                        minWidth: '100px'
-                    }}>
-                        <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>
-                            {keywords && keywords.length > 0 ? keywords.join(', ') : '...'}
+            {/* Particles for High Importance */}
+            {isAlpha && (
+                <Sparkles count={15} scale={baseSize * 8} size={2} speed={0.4} opacity={0.5} color={color} />
+            )}
+
+            {/* Label: Cyberpunk HUD Style */}
+            {showLabel && (
+                <Html distanceFactor={10} position={[0, baseSize + 0.2, 0]} style={{ pointerEvents: 'none' }}>
+                    <div className="flex flex-col items-center">
+                        <div style={{
+                            color: isAlpha ? '#FFD700' : '#00FFFF',
+                            background: 'rgba(5, 5, 10, 0.7)',
+                            padding: '4px 8px',
+                            backdropFilter: 'blur(4px)',
+                            border: `1px solid ${isAlpha ? 'rgba(255, 215, 0, 0.5)' : 'rgba(0, 255, 255, 0.3)'}`,
+                            boxShadow: `0 0 15px ${isAlpha ? 'rgba(255, 215, 0, 0.2)' : 'rgba(0, 255, 255, 0.1)'}`,
+                            borderRadius: '2px',
+                            textAlign: 'center',
+                            minWidth: 'max-content',
+                            fontFamily: 'monospace',
+                            fontSize: '0.75rem',
+                            letterSpacing: '0.05em'
+                        }}>
+                            <div style={{ fontWeight: 'bold' }}>
+                                {topicSummary || (keywords && keywords[0]) || 'NODE'}
+                            </div>
                         </div>
-                        {isSelected && <div style={{ fontSize: '0.7rem', color: '#ccc', maxWidth: '200px', whiteSpace: 'normal' }}>{question.substring(0, 50)}...</div>}
+                        {/* Connecting Line */}
+                        <div style={{ width: '1px', height: '20px', background: `linear-gradient(to top, ${emissive}, transparent)` }}></div>
                     </div>
                 </Html>
             )}
