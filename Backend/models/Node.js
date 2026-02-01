@@ -25,6 +25,9 @@ const nodeSchema = new mongoose.Schema({
         max: 5,
         default: 2
     },
+    topicSummary: {
+        type: String // Short summary for Topic Flow
+    },
     // Context Memory (Vector RAG)
     summary: {
         type: String,

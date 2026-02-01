@@ -36,4 +36,17 @@ router.put('/:id', async (req, res) => {
     }
 });
 
+// Get nodes by project ID
+router.get('/:projectId', async (req, res) => {
+    try {
+        console.log(`[Nodes] Fetching for Project: ${req.params.projectId}`);
+        const nodes = await Node.find({ projectId: req.params.projectId });
+        console.log(`[Nodes] Found ${nodes.length} nodes for project ${req.params.projectId}`);
+        res.json(nodes);
+    } catch (err) {
+        console.error("[Nodes] Error:", err);
+        res.status(500).json({ message: err.message });
+    }
+});
+
 module.exports = router;

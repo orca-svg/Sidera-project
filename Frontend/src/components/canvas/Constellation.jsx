@@ -1,33 +1,35 @@
-import { useRef, useLayoutEffect } from 'react'
+import { useRef } from 'react'
 import { Line } from '@react-three/drei'
 import * as THREE from 'three'
 
 export function Constellation({ start, end, type }) {
-    const lineRef = useRef()
+    // Cyberpunk Energy Line
+    // High opacity but thin, with bloom it will glow.
 
-    // Properties based on type
-    const getLineProps = () => {
+    // Type mapping to color & style
+    const getStyle = () => {
         switch (type) {
-            case 'solid': return { color: '#FFFFFF', opacity: 0.6, dash: false }
-            case 'dashed': return { color: '#8899AA', opacity: 0.3, dash: true } // Recall Link
-            case 'warp': return { color: '#00FFFF', opacity: 0.8, dash: false } // Cyan warp
-            default: return { color: '#FFFFFF', opacity: 0.5, dash: false }
+            case 'solid': return { color: '#00FFFF', opacity: 0.6, dash: false, lineWidth: 1.5 } // Cyan Flow (Dev Pulse)
+            case 'dashed': return { color: '#8899AA', opacity: 0.3, dash: true, lineWidth: 1 }   // Recall (Current Logic)
+            case 'warp': return { color: '#FF00FF', opacity: 0.8, dash: false, lineWidth: 2 }    // Magenta Active (Dev)
+            default: return { color: '#FFFFFF', opacity: 0.4, dash: false, lineWidth: 1 }
         }
     }
 
-    const { color, opacity, dash } = getLineProps()
+    const { color, opacity, dash, lineWidth } = getStyle()
 
     return (
         <Line
             points={[start, end]}
             color={color}
-            lineWidth={1}
+            lineWidth={lineWidth}
             opacity={opacity}
             transparent
             dashed={dash}
-            dashScale={dash ? 2 : 1}
-            dashSize={dash ? 1 : 0}
-            gapSize={dash ? 0.5 : 0}
+            dashScale={2}
+            dashSize={1}
+            gapSize={1}
+            toneMapped={false} // Crucial for Bloom! Allows colors > 1.0 to glow
         />
     )
 }
