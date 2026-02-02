@@ -22,10 +22,12 @@ const authMiddleware = async (req, res, next) => {
 
   try {
     // 3. Verify Google Token
-    const ticket = await client.verifyIdToken({
-      idToken: token,
-      audience: CLIENT_ID,
-    });
+    const verifyOptions = { idToken: token };
+    // Only enforce audience check if CLIENT_ID is properly configured
+    if (CLIENT_ID && !CLIENT_ID.startsWith('YOUR_')) {
+      verifyOptions.audience = CLIENT_ID;
+    }
+    const ticket = await client.verifyIdToken(verifyOptions);
     const payload = ticket.getPayload();
     const { sub: googleId, email, name, picture } = payload;
 

@@ -8,15 +8,13 @@ export function Constellation({ start, end, type }) {
 
     // Type mapping to color & style
     const getStyle = () => {
-        const getStyle = () => {
-            switch (type) {
-                case 'temporal': return { color: '#445566', opacity: 0.2, dash: true, lineWidth: 1 }      // Subtle Backbone
-                case 'explicit': return { color: '#00FFFF', opacity: 0.8, dash: false, lineWidth: 2 }     // Strong Thread (Cyan Glow)
-                case 'implicit': return { color: '#88AAFF', opacity: 0.3, dash: false, lineWidth: 1 }     // Contextual Link (Pale Blue)
-                case 'solid': return { color: '#00FFFF', opacity: 0.6, dash: false, lineWidth: 1.5 }      // Legacy
-                case 'dashed': return { color: '#8899AA', opacity: 0.3, dash: true, lineWidth: 1 }        // Legacy
-                default: return { color: '#FFFFFF', opacity: 0.2, dash: false, lineWidth: 1 }
-            }
+        switch (type) {
+            case 'temporal': return { color: '#445566', opacity: 0.2, dash: true, lineWidth: 1 }      // Subtle Backbone
+            case 'explicit': return { color: '#00FFFF', opacity: 0.8, dash: false, lineWidth: 2 }     // Strong Thread (Cyan Glow)
+            case 'implicit': return { color: '#88AAFF', opacity: 0.3, dash: true, lineWidth: 1 }     // Contextual Link (Pale Blue)
+            case 'solid': return { color: '#00FFFF', opacity: 0.6, dash: false, lineWidth: 1.5 }      // Legacy
+            case 'dashed': return { color: '#8899AA', opacity: 0.3, dash: true, lineWidth: 1 }        // Legacy
+            default: return { color: '#FFFFFF', opacity: 0.2, dash: false, lineWidth: 1 }
         }
     }
 

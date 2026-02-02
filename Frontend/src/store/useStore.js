@@ -151,8 +151,9 @@ export const useStore = create((set, get) => ({
         question: n.question,
         answer: n.answer,
         keywords: n.keywords || [],
-        importance: n.importance || 'Beta',
-        topicSummary: n.topicSummary,
+        importance: n.importance || 3,
+        topicSummary: n.topicSummary || n.summary,
+        summaryEmbedding: n.summaryEmbedding,
         // Safety check for position
         position: (n.position && typeof n.position.x === 'number')
           ? [n.position.x, n.position.y, n.position.z]
@@ -160,10 +161,20 @@ export const useStore = create((set, get) => ({
         createdAt: n.createdAt
       }));
 
-      // 4. Update Store
-      set({ nodes: mappedNodes, isLoading: false });
+      // 3.5. Fetch Edges for this Project
+      const edgesRes = await client.get(`/edges/${projectId}`);
+      const fetchedEdges = Array.isArray(edgesRes.data) ? edgesRes.data : [];
+      const mappedEdges = fetchedEdges.map(e => ({
+        id: e._id,
+        source: e.source,
+        target: e.target,
+        type: e.type
+      }));
 
-      console.log(`[Store] Loaded ${mappedNodes.length} nodes for project ${projectId}`);
+      // 4. Update Store
+      set({ nodes: mappedNodes, edges: mappedEdges, isLoading: false });
+
+      console.log(`[Store] Loaded ${mappedNodes.length} nodes and ${mappedEdges.length} edges for project ${projectId}`);
 
     } catch (err) {
       console.error("[Store] setActiveProject Error:", err);
@@ -207,17 +218,21 @@ export const useStore = create((set, get) => ({
 
       const res = await client.post('/chat', payload);
 
-      const { node: savedNode, edge: savedEdge, projectTitle } = res.data;
+      const { node: savedNode, edges: savedEdges, projectTitle } = res.data;
 
-      // Map Real Node
+      // Map Real Node (safe position parsing)
+      const pos = savedNode.position || { x: 0, y: 0, z: 0 };
       const realNode = {
         ...savedNode,
-        id: savedNode._id,
-        position: [savedNode.position.x, savedNode.position.y, savedNode.position.z]
+        id: savedNode._id || savedNode.id,
+        position: Array.isArray(pos) ? pos : [pos.x || 0, pos.y || 0, pos.z || 0],
+        topicSummary: savedNode.topicSummary || savedNode.summary,
+        importance: savedNode.importance || 3
       };
 
       // 1. Replace Temp Node with Real Node
-      const finalNodes = get().nodes.map(n => n.id === tempId ? realNode : n);
+      const currentNodes = get().nodes;
+      const finalNodes = currentNodes.map(n => n.id === tempId ? realNode : n);
 
       // 2. Instant Title Update (Sidebar Sync) -- Robust Local Update
       let updatedProjects = get().projects;
@@ -232,10 +247,17 @@ export const useStore = create((set, get) => ({
         });
       }
 
+      // 3. Handle Edges (Array)
+      // Map edges to ensure ID consistency if needed (though backend provides _id)
+      const newEdges = savedEdges ? savedEdges.map(e => ({ ...e, id: e.id || e._id })) : [];
+
+      console.log(`[Store] Final nodes count: ${finalNodes.length}`, finalNodes);
+      console.log(`[Store] New edges count: ${newEdges.length}`, newEdges);
+
       set({
         nodes: finalNodes,
         activeNode: realNode.id,
-        edges: savedEdge ? [...(get().edges || []), { ...savedEdge, id: savedEdge._id }] : get().edges,
+        edges: [...(get().edges || []), ...newEdges],
         projects: updatedProjects
       });
 

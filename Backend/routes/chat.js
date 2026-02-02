@@ -21,6 +21,63 @@ function cosineSimilarity(vecA, vecB) {
     return (magnitudeA && magnitudeB) ? dotProduct / (magnitudeA * magnitudeB) : 0;
 }
 
+// --- Position Helper (handles array [x,y,z] or object {x,y,z}) ---
+function getPos(node) {
+    if (!node || !node.position) return null;
+    if (Array.isArray(node.position)) {
+        return { x: node.position[0] || 0, y: node.position[1] || 0, z: node.position[2] || 0 };
+    }
+    if (typeof node.position.x === 'number') return node.position;
+    return null;
+}
+
+// --- Similarity-based Position Calculation ---
+function calculatePosition(newEmbedding, existingNodes) {
+    // existingNodes: [{ position: {x,y,z}, summaryEmbedding: [...] }]
+    const scored = existingNodes
+        .filter(n => n.summaryEmbedding && n.position)
+        .map(n => ({
+            position: n.position,
+            similarity: cosineSimilarity(newEmbedding, n.summaryEmbedding)
+        }));
+
+    if (scored.length === 0) return { x: 0, y: 0, z: 0 };
+
+    // Weighted centroid (nodes with higher similarity pull harder)
+    let weightSum = 0, wx = 0, wy = 0, wz = 0;
+    for (const s of scored) {
+        const w = Math.max(0, s.similarity);
+        wx += s.position.x * w;
+        wy += s.position.y * w;
+        wz += s.position.z * w;
+        weightSum += w;
+    }
+
+    if (weightSum === 0) {
+        // No positive similarity — place randomly away from origin
+        const theta = Math.random() * 2 * Math.PI;
+        return { x: 10 * Math.cos(theta), y: 10 * Math.sin(theta), z: (Math.random() - 0.5) * 4 };
+    }
+
+    const cx = wx / weightSum;
+    const cy = wy / weightSum;
+    const cz = wz / weightSum;
+
+    // Distance inversely proportional to max similarity
+    // High similarity → closer (3~5), Low similarity → farther (8~15)
+    const maxSim = Math.max(...scored.map(s => s.similarity));
+    const distance = 3 + (1 - maxSim) * 12;
+
+    const theta = Math.random() * 2 * Math.PI;
+    const phi = (Math.random() - 0.5) * Math.PI * 0.6;
+
+    return {
+        x: cx + distance * Math.cos(theta) * Math.cos(phi),
+        y: cy + distance * Math.sin(theta) * Math.cos(phi),
+        z: cz + distance * Math.sin(phi) * 2
+    };
+}
+
 const authMiddleware = require('../middleware/auth');
 
 // Apply Auth Middleware
@@ -46,7 +103,6 @@ router.post('/', async (req, res) => {
         // --- GUEST MODE: VOLATILE (NO DB SAVE) ---
         if (isGuest) {
             // 1. Build Context from Client History
-            // History expected format: [{ question: "...", answer: "..." }, ...]
             const recentContext = history
                 ? history.slice(-3).map(n => `User: ${n.question}\nAI: ${n.answer}`).join('\n')
                 : "";
@@ -55,38 +111,93 @@ router.post('/', async (req, res) => {
             // 2. Generate Response
             const aiResponse = await aiService.generateResponse(message, finalContext, settings);
 
-            // 3. Return Ephemeral Node
-            // We mock the ID and positions since we don't save.
+            // 3. Generate Embeddings (Needed for Edges)
+            const summaryEmbedding = await aiService.getEmbedding(aiResponse.summary);
+            // const fullEmbedding = await aiService.getEmbedding(message + " " + aiResponse.answer); // Optional for Guest
+
+            // 4. Calculate Position (Similarity-based)
             const lastNode = history && history.length > 0 ? history[history.length - 1] : null;
 
             let newPosition = { x: 0, y: 0, z: 0 };
-            if (lastNode && lastNode.position) {
-                // Simple random walk for Guest
-                const distance = 5 + Math.random() * 5;
-                const theta = Math.random() * 2 * Math.PI;
-                newPosition = {
-                    x: lastNode.position.x + distance * Math.cos(theta),
-                    y: lastNode.position.y + distance * Math.sin(theta),
-                    z: lastNode.position.z + (Math.random() - 0.5) * 4
-                };
+            if (summaryEmbedding && history && history.length > 0) {
+                // Convert history positions from arrays to objects
+                const existingNodes = history.map(n => ({
+                    position: getPos(n),
+                    summaryEmbedding: n.summaryEmbedding
+                })).filter(n => n.position && n.summaryEmbedding);
+
+                if (existingNodes.length > 0) {
+                    newPosition = calculatePosition(summaryEmbedding, existingNodes);
+                }
             }
 
             const ephemeralNode = {
-                _id: 'guest-' + Date.now(), // Fake ID
+                id: 'guest-' + Date.now(), // Frontend uses 'id' usually, check if mapped to _id
+                _id: 'guest-' + Date.now(),
                 projectId: 'guest-session',
                 question: message,
                 answer: aiResponse.answer,
                 keywords: aiResponse.keywords,
                 importance: aiResponse.importance,
                 summary: aiResponse.summary,
+                summaryEmbedding: summaryEmbedding, // Include for client-side debugging if needed
                 position: newPosition,
                 createdAt: new Date().toISOString()
             };
 
+            // 5. Generate Ephemeral Edges (Sidera-Connect)
+            const newEdges = [];
+
+            // A. Temporal Edge
+            if (lastNode) {
+                newEdges.push({
+                    id: 'edge-temp-' + Date.now(),
+                    source: lastNode.id || lastNode._id,
+                    target: ephemeralNode.id,
+                    type: 'temporal'
+                });
+            }
+
+            // B. Semantic Edges (Against History)
+            if (summaryEmbedding && history && history.length > 0) {
+                const candidates = history.map(n => ({
+                    node: n,
+                    score: cosineSimilarity(summaryEmbedding, n.summaryEmbedding)
+                })).filter(c => (c.node.id || c.node._id) !== (lastNode?.id || lastNode?._id));
+
+                candidates.sort((a, b) => b.score - a.score);
+
+                let explicitCount = 0;
+                let implicitCount = 0;
+
+                for (const cand of candidates) {
+                    if (explicitCount >= 1 && implicitCount >= 2) break;
+
+                    if (cand.score >= 0.85 && explicitCount < 1) {
+                        newEdges.push({
+                            id: 'edge-exp-' + Date.now() + Math.random(),
+                            source: cand.node.id || cand.node._id,
+                            target: ephemeralNode.id,
+                            type: 'explicit'
+                        });
+                        explicitCount++;
+                    }
+                    else if (cand.score >= 0.65 && explicitCount + implicitCount < 3) {
+                        newEdges.push({
+                            id: 'edge-imp-' + Date.now() + Math.random(),
+                            source: cand.node.id || cand.node._id,
+                            target: ephemeralNode.id,
+                            type: 'implicit'
+                        });
+                        implicitCount++;
+                    }
+                }
+            }
+
             // Return immediately without saving
             return res.status(200).json({
                 node: ephemeralNode,
-                edges: [], // No persistent edges for guests
+                edges: newEdges,
                 projectTitle: history && history.length === 0 ? "Guest Exploration" : null
             });
         }
@@ -159,22 +270,16 @@ router.post('/', async (req, res) => {
         newNode.summaryEmbedding = await aiService.getEmbedding(newNode.summary);
         newNode.fullEmbedding = await aiService.getEmbedding(newNode.question + " " + newNode.answer);
 
-        // Position Logic: Relative to Last Node (Persistent Constellation)
+        // Position Logic: Similarity-based (Sidera Constellation)
         let newPosition = { x: 0, y: 0, z: 0 };
 
-        if (actualLastNode && actualLastNode.position) {
-            // Random direction in 3D or 2D plane
-            const theta = Math.random() * 2 * Math.PI; // Angle on XY plane
-            const phi = (Math.random() - 0.5) * Math.PI; // Elevation (optional for 3D looseness)
+        if (newNode.summaryEmbedding) {
+            const allNodesForPos = await Node.find({ projectId, _id: { $ne: newNode._id } })
+                .select('position summaryEmbedding');
 
-            // Distance between 5 and 10
-            const distance = 5 + Math.random() * 5;
-
-            newPosition = {
-                x: actualLastNode.position.x + distance * Math.cos(theta),
-                y: actualLastNode.position.y + distance * Math.sin(theta),
-                z: actualLastNode.position.z + (Math.random() - 0.5) * 4 // Creating some depth variation
-            };
+            if (allNodesForPos.length > 0) {
+                newPosition = calculatePosition(newNode.summaryEmbedding, allNodesForPos);
+            }
         }
 
         newNode.position = newPosition;
@@ -264,7 +369,7 @@ router.post('/', async (req, res) => {
         });
 
     } catch (err) {
-        console.error("Chat Error:", err);
+        console.error("Chat Error:", err.message, err.stack);
         res.status(500).json({ error: err.message });
     }
 });

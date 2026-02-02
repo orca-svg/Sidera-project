@@ -385,7 +385,30 @@ export function MainLayout() {
                                             <Sparkles size={16} className="text-white" />
                                         </div>
                                         <div className="flex-1 space-y-2 py-1">
-                                            <div className="text-sm font-medium text-gray-400 mb-1">Sidera AI</div>
+                                            <div className="text-sm font-medium text-gray-400 mb-1 flex items-center gap-2">
+                                                <span>Sidera AI</span>
+                                                {!node.isPending && node.importance && (
+                                                    <span
+                                                        className="text-xs px-2 py-0.5 rounded-full font-mono"
+                                                        style={{
+                                                            color: node.importance === 5 ? '#FFD700' :
+                                                                   node.importance === 4 ? '#00FFFF' :
+                                                                   node.importance === 3 ? '#88AAFF' :
+                                                                   node.importance === 2 ? '#FFFFFF' : '#888888',
+                                                            backgroundColor: `${node.importance === 5 ? '#FFD700' :
+                                                                              node.importance === 4 ? '#00FFFF' :
+                                                                              node.importance === 3 ? '#88AAFF' :
+                                                                              node.importance === 2 ? '#FFFFFF' : '#888888'}15`,
+                                                            border: `1px solid ${node.importance === 5 ? '#FFD700' :
+                                                                                  node.importance === 4 ? '#00FFFF' :
+                                                                                  node.importance === 3 ? '#88AAFF' :
+                                                                                  node.importance === 2 ? '#FFFFFF' : '#888888'}40`
+                                                        }}
+                                                    >
+                                                        {'★'.repeat(node.importance)}
+                                                    </span>
+                                                )}
+                                            </div>
                                             <div className="prose prose-invert max-w-none text-gray-100 leading-7 text-[16px]">
                                                 {node.isPending ? (
                                                     <div className="flex items-center gap-2 text-gray-400 italic">

@@ -78,6 +78,8 @@ export function Universe({ isInteractive = true }) {
     const settings = useStore(state => state.settings)
     const cameraControlsRef = useRef()
 
+    console.log(`[Universe] Rendering ${nodes.length} stars and ${edges.length} edges`)
+
     // Optimized: Create node index map for O(1) lookups instead of O(n²)
     const nodeMap = useMemo(() =>
         new Map(nodes.map(n => [n.id, n])),
@@ -141,11 +143,37 @@ export function Universe({ isInteractive = true }) {
     }, [viewMode, setIsWarping])
 
     return (
-        <Canvas
-            camera={{ position: [0, 0, 120], fov: 60 }}
-            style={{ height: '100%', width: '100%', background: '#050510' }}
-            gl={{ preserveDrawingBuffer: true }}
-        >
+        <>
+            {/* Edge Legend Overlay - Only visible in constellation view */}
+            {viewMode === 'constellation' && (
+                <div className="absolute bottom-6 left-6 z-10 bg-black/60 backdrop-blur-md border border-white/10 rounded-lg px-4 py-3 shadow-xl">
+                    <div className="text-xs font-medium text-gray-300 mb-2">연결 타입</div>
+                    <div className="space-y-2 text-xs text-gray-400">
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-1">
+                                <div className="w-8 h-px bg-gray-500 opacity-40" style={{ backgroundImage: 'linear-gradient(to right, #445566 50%, transparent 50%)', backgroundSize: '4px 1px' }} />
+                            </div>
+                            <span>시간순 연결</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-0.5 bg-cyan-400" style={{ boxShadow: '0 0 4px #00FFFF' }} />
+                            <span>명시적 연결 (≥0.85)</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-1">
+                                <div className="w-8 h-px bg-blue-300 opacity-50" style={{ backgroundImage: 'linear-gradient(to right, #88AAFF 50%, transparent 50%)', backgroundSize: '4px 1px' }} />
+                            </div>
+                            <span>암묵적 연결 (≥0.65)</span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <Canvas
+                camera={{ position: [0, 0, 120], fov: 60 }}
+                style={{ height: '100%', width: '100%', background: '#050510' }}
+                gl={{ preserveDrawingBuffer: true }}
+            >
             {/* Scene Background (Matches CSS for correct Capture) */}
             <color attach="background" args={['#050510']} />
             <ambientLight intensity={0.5} />
@@ -208,5 +236,6 @@ export function Universe({ isInteractive = true }) {
                 <Bloom luminanceThreshold={0.2} luminanceSmoothing={0.9} intensity={visualConfig.bloomIntensity} />
             </EffectComposer>
         </Canvas>
+        </>
     )
 }

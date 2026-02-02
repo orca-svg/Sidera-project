@@ -19,4 +19,14 @@ router.post('/', async (req, res) => {
     }
 });
 
+// Get edges by project ID
+router.get('/:projectId', async (req, res) => {
+    try {
+        const edges = await Edge.find({ projectId: req.params.projectId });
+        res.json(edges);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 module.exports = router;
