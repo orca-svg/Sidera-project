@@ -9,6 +9,8 @@ const PORT = process.env.PORT || 5001;
 // Middleware
 app.use(cors());
 app.use(express.json());
+const passport = require('passport');
+require('./config/passport'); // Passport Config
 
 // Request Logger
 app.use((req, res, next) => {
@@ -27,11 +29,13 @@ app.get('/', (req, res) => {
 });
 
 // Import Routes
+const authRoutes = require('./routes/auth');
 const projectRoutes = require('./routes/projects');
 const nodeRoutes = require('./routes/nodes');
 const edgeRoutes = require('./routes/edges');
 const chatRoutes = require('./routes/chat');
 
+app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/nodes', nodeRoutes);
 app.use('/api/edges', edgeRoutes);

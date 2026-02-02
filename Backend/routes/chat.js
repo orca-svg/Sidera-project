@@ -83,6 +83,38 @@ const authMiddleware = require('../middleware/auth');
 // Apply Auth Middleware
 router.use(authMiddleware);
 
+// --- 3. Context Retrieval (History Chain) ---
+router.get('/context/:nodeId', async (req, res) => {
+    try {
+        const targetNode = await Node.findById(req.params.nodeId);
+        if (!targetNode) return res.status(404).json({ error: 'Node not found' });
+
+        // Build chain backwards using 'temporal' edges
+        const chain = [targetNode];
+        let currentNode = targetNode;
+
+        // Limit depth to avoid infinite loops (though temporal should be acyclic)
+        for (let i = 0; i < 20; i++) {
+            const edge = await Edge.findOne({
+                target: currentNode._id,
+                type: 'temporal'
+            });
+
+            if (!edge) break; // Start of chain found
+
+            const prevNode = await Node.findById(edge.source);
+            if (!prevNode) break;
+
+            chain.unshift(prevNode); // Prepend to maintain chronological order
+            currentNode = prevNode;
+        }
+
+        res.json({ context: chain });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // --- 2. Chat Endpoint ---
 router.post('/', async (req, res) => {
     try {

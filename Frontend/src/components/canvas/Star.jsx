@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Html, Sphere, Sparkles, MeshDistortMaterial } from '@react-three/drei'
 import { useStore } from '../../store/useStore'
+import { Bookmark } from 'lucide-react'
 import clsx from 'clsx'
 
 export function Star({ position, node, isSelected, onClick }) {
@@ -126,18 +127,40 @@ export function Star({ position, node, isSelected, onClick }) {
 
                         {/* 2. Info Card (Glass Panel) - Adjusted Padding */}
                         <div className={clsx(
-                            "mb-1 px-3 py-1.5 rounded-lg border backdrop-blur-md shadow-xl transition-all duration-300",
-                            "bg-black/80 text-sm whitespace-nowrap flex items-center gap-2",
+                            "mb-1 px-3 py-1.5 rounded-lg border backdrop-blur-md shadow-xl transition-all duration-300 pointer-events-auto flex items-center gap-2",
+                            "bg-black/80 text-sm whitespace-nowrap",
                             borderColor, shadowColor
                         )}>
                             <span className={clsx("font-bold animate-pulse", themeColor)}>●</span>
                             <span className="text-gray-100 font-mono tracking-wide">
                                 {topicSummary || (keywords && keywords[0]) || "NODE"}
                             </span>
+
+                            {/** Bookmark Toggle Button **/}
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    useStore.getState().toggleBookmark(node.id);
+                                }}
+                                className={clsx(
+                                    "ml-2 p-1 rounded hover:bg-white/20 transition-colors",
+                                    node.isBookmarked ? "text-yellow-400" : "text-gray-500 hover:text-white"
+                                )}
+                            >
+                                <Bookmark size={14} className={node.isBookmarked ? "fill-current" : ""} />
+                            </button>
                         </div>
 
                     </div>
                 </Html>
+            )}
+
+            {/* Bookmark Visual Indicator (Orbiting Ring) */}
+            {node.isBookmarked && (
+                <mesh rotation={[Math.PI / 2, 0, 0]}>
+                    <ringGeometry args={[baseSize * 1.5, baseSize * 1.6, 32]} />
+                    <meshBasicMaterial color="#FFD700" side={2} transparent opacity={0.6} />
+                </mesh>
             )}
 
             {/* Halo for Alpha Stars */}

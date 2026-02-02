@@ -280,6 +280,94 @@ export const useStore = create((set, get) => ({
     }
   },
 
+  // 5. Delete Project
+  deleteProject: async (projectId) => {
+    try {
+      await client.delete(`/projects/${projectId}`);
+      const { projects, activeProjectId } = get();
+      const updatedProjects = projects.filter(p => p.id !== projectId);
+
+      set({ projects: updatedProjects });
+
+      // If needed, switch active project
+      if (activeProjectId === projectId) {
+        if (updatedProjects.length > 0) {
+          get().setActiveProject(updatedProjects[0].id);
+        } else {
+          // No projects left, create one or clear
+          set({ activeProjectId: null, nodes: [], edges: [] });
+          await get().createProject();
+        }
+      }
+    } catch (err) {
+      console.error("[Store] deleteProject Error:", err);
+    }
+  },
+
+  // 6. Rename Project
+  renameProject: async (projectId, newName) => {
+    try {
+      await client.put(`/projects/${projectId}`, { name: newName });
+      set(state => ({
+        projects: state.projects.map(p =>
+          p.id === projectId ? { ...p, title: newName } : p
+        )
+      }));
+    } catch (err) {
+      console.error("[Store] renameProject Error:", err);
+    }
+  },
+
+  // 7. Search Nodes
+  searchNodes: async (query) => {
+    const { activeProjectId } = get();
+    if (!activeProjectId || !query.trim()) return [];
+
+    try {
+      const res = await client.get(`/nodes/search?projectId=${activeProjectId}&query=${encodeURIComponent(query)}`);
+      // Return matches to the UI component to handle (e.g. list them)
+      // Or we could store them in specific 'searchResults' state
+      const matches = res.data.map(n => ({
+        id: n._id,
+        question: n.question,
+        position: n.position
+      }));
+      return matches;
+    } catch (err) {
+      console.error("[Store] searchNodes Error:", err);
+      return [];
+    }
+  },
+
+  // 8. Toggle Bookmark
+  toggleBookmark: async (nodeId) => {
+    try {
+      const res = await client.patch(`/nodes/${nodeId}/bookmark`);
+      const { isBookmarked } = res.data;
+
+      set(state => ({
+        nodes: state.nodes.map(n =>
+          n.id === nodeId ? { ...n, isBookmarked } : n
+        )
+      }));
+    } catch (err) {
+      console.error("[Store] toggleBookmark Error:", err);
+    }
+  },
+
+  // 9. Save View State
+  saveViewState: async (viewState) => {
+    const { activeProjectId, user } = get();
+    if (!activeProjectId || user?.isGuest) return;
+
+    try {
+      await client.post(`/projects/${activeProjectId}/view-state`, { viewState });
+    } catch (err) {
+      // Silent fail for UX smoothness
+      console.warn("[Store] saveViewState Error:", err);
+    }
+  },
+
   focusTarget: null, // { position: [x,y,z], id: string }
 
   // --- UI Actions ---
@@ -296,6 +384,8 @@ export const useStore = create((set, get) => ({
       set({ activeNode: nodeId });
       // 2. Set Focus Target (Trigger Camera Move)
       set({ focusTarget: { position: target.position, id: target.id } });
+      // 3. Ensure we are in Constellation View to see it
+      set({ viewMode: 'constellation' });
     }
   },
 
