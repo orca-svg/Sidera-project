@@ -21,11 +21,27 @@ function cosineSimilarity(vecA, vecB) {
     return (magnitudeA && magnitudeB) ? dotProduct / (magnitudeA * magnitudeB) : 0;
 }
 
+const authMiddleware = require('../middleware/auth');
+
+// Apply Auth Middleware
+router.use(authMiddleware);
+
 // --- 2. Chat Endpoint ---
 router.post('/', async (req, res) => {
     try {
-        const { message, projectId, settings, isGuest, history } = req.body; // Added isGuest, history
+        const { message, projectId, settings, isGuest, history } = req.body;
         console.log(`[Chat Request] ${isGuest ? '[GUEST]' : ''} Message: "${message}"`);
+
+        // Security Check for Persistent Mode
+        if (!isGuest) {
+            if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
+            // Verify Project Ownership
+            const project = await Project.findOne({ _id: projectId, userId: req.user._id });
+            if (!project) {
+                return res.status(403).json({ error: 'Forbidden: You do not own this project' });
+            }
+        }
 
         // --- GUEST MODE: VOLATILE (NO DB SAVE) ---
         if (isGuest) {
@@ -165,41 +181,71 @@ router.post('/', async (req, res) => {
 
         const savedNode = await newNode.save();
 
-        // E. Smart Edges (Constellation Logic)
+        // E. Sidera-Connect: Hybrid Edge Logic
         const newEdges = [];
 
-        // Rule 1: Always check immediate continuity
-        // actualLastNode is already defined above
-
-        let linked = false;
-
-        // Continuity Link (to Last Node)
+        // 1. Temporal Edge (Backbone) - Always link to immediate predecessor ($t-1$)
         if (actualLastNode) {
-            if (actualLastNode.summaryEmbedding && cosineSimilarity(newNode.summaryEmbedding, actualLastNode.summaryEmbedding) > 0.5) {
-                const edge = new Edge({
-                    projectId,
-                    source: actualLastNode._id,
-                    target: savedNode._id,
-                    type: 'solid' // Flow
-                });
-                await edge.save();
-                newEdges.push(edge);
-                linked = true;
-                console.log(`[Link] Connected to Last Node (Flow)`);
-            }
+            const temporalEdge = new Edge({
+                projectId,
+                source: actualLastNode._id,
+                target: savedNode._id,
+                type: 'temporal'
+            });
+            await temporalEdge.save();
+            newEdges.push(temporalEdge);
         }
 
-        // Branching Link (if not linked to last, or strong recall found)
-        if (!linked && bestMatchNode && bestMatchScore > 0.7 && bestMatchNode.id !== actualLastNode?.id) {
-            const edge = new Edge({
-                projectId,
-                source: bestMatchNode._id,
-                target: savedNode._id,
-                type: 'dashed' // Recall/Branch
-            });
-            await edge.save();
-            newEdges.push(edge);
-            console.log(`[Link] Branching from Memory: ${bestMatchNode.summary}`);
+        // 2. Semantic Edges (Explicit / Implicit)
+        if (newNode.summaryEmbedding && newNode.summaryEmbedding.length > 0) {
+            // Fetch potential candidates (Top 50 recent nodes to keep it fast)
+            const recentNodes = await Node.find({ projectId, _id: { $ne: savedNode._id } })
+                .sort({ createdAt: -1 })
+                .limit(50)
+                .select('summaryEmbedding question answer date');
+
+            const candidates = recentNodes.map(n => ({
+                node: n,
+                score: cosineSimilarity(newNode.summaryEmbedding, n.summaryEmbedding)
+            })).filter(c => c.node._id.toString() !== actualLastNode?._id.toString()); // Exclude t-1 (already temporal)
+
+            // Sort by score
+            candidates.sort((a, b) => b.score - a.score);
+
+            let explicitCount = 0;
+            let implicitCount = 0;
+
+            for (const cand of candidates) {
+                // Max Constraints
+                if (explicitCount >= 1 && implicitCount >= 2) break;
+
+                if (cand.score >= 0.85 && explicitCount < 1) {
+                    // Explicit Edge (Direct Thread)
+                    const edge = new Edge({
+                        projectId,
+                        source: cand.node._id,
+                        target: savedNode._id,
+                        type: 'explicit'
+                    });
+                    await edge.save();
+                    newEdges.push(edge);
+                    explicitCount++;
+                    console.log(`[Link] Explicit Edge to "${cand.node.question.substring(0, 20)}..." (Score: ${cand.score.toFixed(2)})`);
+                }
+                else if (cand.score >= 0.65 && explicitCount + implicitCount < 3) {
+                    // Implicit Edge (Contextual)
+                    const edge = new Edge({
+                        projectId,
+                        source: cand.node._id,
+                        target: savedNode._id,
+                        type: 'implicit'
+                    });
+                    await edge.save();
+                    newEdges.push(edge);
+                    implicitCount++;
+                    console.log(`[Link] Implicit Edge to "${cand.node.question.substring(0, 20)}..." (Score: ${cand.score.toFixed(2)})`);
+                }
+            }
         }
 
         // F. Auto-Rename Project (if first message or default name)

@@ -6,6 +6,11 @@ const projectSchema = new mongoose.Schema({
         required: true,
         default: 'Untitled Universe'
     },
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
     createdAt: {
         type: Date,
         default: Date.now

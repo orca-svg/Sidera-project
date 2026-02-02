@@ -18,8 +18,8 @@ const edgeSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['solid', 'dotted', 'warp'],
-        default: 'solid'
+        enum: ['temporal', 'explicit', 'implicit'],
+        default: 'temporal'
     },
     createdAt: {
         type: Date,
