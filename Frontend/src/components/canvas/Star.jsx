@@ -14,19 +14,34 @@ export function Star({ position, node, isSelected, onClick }) {
     const { importance, keywords, topicSummary } = node
 
     // 1. Determine "Class" based on Importance
+    // 1. Granular Sidera-IS Visual Mapping (1-5)
+    // 5: Critical (Gold/Large) - Supernova
+    // 4: High (Cyan/Med-Large) - Giant
+    // 3: Medium (Blue/Med) - Main Seq
+    // 2: Low (White/Small) - Dwarf
+    // 1: Trivial (Grey/Tiny) - Dust
+
     const isAlpha = importance >= 5
-    const isBeta = importance >= 3 && importance < 5
 
-    // 2. Size Logic
-    let baseSize = 0.04
-    if (isAlpha) baseSize = 0.15
-    else if (isBeta) baseSize = 0.08
+    const getSize = () => {
+        switch (importance) {
+            case 5: return 0.18
+            case 4: return 0.12
+            case 3: return 0.08
+            case 2: return 0.05
+            default: return 0.03
+        }
+    }
+    const baseSize = getSize()
 
-    // 3. Color Logic
     const getColor = () => {
-        if (isAlpha) return { color: '#FFD700', emissive: '#FFaa00', intensity: 4.0 } // Gold
-        if (isBeta) return { color: '#00FFFF', emissive: '#0088FF', intensity: 2.5 } // Cyan
-        return { color: '#ffffff', emissive: '#505050', intensity: 1.5 } // White
+        switch (importance) {
+            case 5: return { color: '#FFD700', emissive: '#FFaa00', intensity: 4.0 } // Gold
+            case 4: return { color: '#00FFFF', emissive: '#0088FF', intensity: 3.0 } // Cyan
+            case 3: return { color: '#88AAFF', emissive: '#5588EE', intensity: 2.0 } // Blue
+            case 2: return { color: '#FFFFFF', emissive: '#888888', intensity: 1.2 } // White
+            default: return { color: '#888888', emissive: '#444444', intensity: 0.5 } // Grey
+        }
     }
 
     const { color, emissive, intensity } = getColor()

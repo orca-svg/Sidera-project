@@ -51,8 +51,13 @@ async function generateResponse(prompt, context = "", settings = {}) {
       Task:
       1. Analyze the user's input and provide a helpful, engaging response in **Korean** (한국어).
       2. Extract 1-3 short keywords (noun phrases in **Korean**).
-      3. Rate importance (1=Trivial, 3=Standard, 5=Crucial/Milestone).
-      4. **Summarize** the interaction in one concise sentence in **Korean** (Subject + Action + Result).
+      3. **Rate Importance (Sidera-IS)** on a scale of 1-5 based on the following rubric:
+         - **5 (Critical)**: High information gain (novelty), concrete stats, or major decision/milestone (agreement, proposal).
+         - **4 (High)**: Detailed explanation, specific examples, clarifying complex topics.
+         - **3 (Medium)**: Standard relevant info, context elaboration.
+         - **2 (Low)**: Minor details, repetitive confirmation, simple agreement.
+         - **1 (Trivial)**: Greetings, phatic communication ("Okay", "Hello"), pure reaction.
+      4. **Summarize** the interaction in one concise sentence in **Korean**.
 
       User Input: "${prompt}"
       
