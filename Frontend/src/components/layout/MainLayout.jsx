@@ -45,6 +45,7 @@ export function MainLayout() {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false)
     const chatEndRef = useRef(null)
     const inputRef = useRef(null)
+    const isComposing = useRef(false) // IME State Ref
 
     // Mobile check - Optimized: Use custom hook for event listener
     useEffect(() => {
@@ -440,8 +441,11 @@ export function MainLayout() {
                                     placeholder="Message Sidera..."
                                     rows={1}
                                     className="flex-1 bg-transparent border-none outline-none text-white placeholder-gray-500 text-lg resize-none min-h-[48px] max-h-[200px] py-3 px-2 hide-scrollbar"
+                                    onCompositionStart={() => isComposing.current = true}
+                                    onCompositionEnd={() => isComposing.current = false}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter' && !e.shiftKey) {
+                                            if (isComposing.current) return; // Prevent duplicate submit
                                             e.preventDefault();
                                             handleSubmit(e);
                                         }

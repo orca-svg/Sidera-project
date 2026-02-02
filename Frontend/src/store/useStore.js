@@ -70,14 +70,17 @@ export const useStore = create((set, get) => ({
     }
   },
 
+  isCreating: false,
+
   // 2. Create New Project (New Chat)
   createProject: async () => {
+    // 0. Prevents double-submission
+    if (get().isCreating) return;
+
     const { projects, activeProjectId, nodes, user } = get();
 
-    // Guest Mode Logic
+    // Guest Mode Logic (From Remote)
     if (user?.isGuest) {
-      // Guests only have one volatile session. If they want "New", we just clear nodes?
-      // Or we treat it as "reset".
       set({
         activeProjectId: 'guest-session',
         nodes: [],
@@ -88,20 +91,23 @@ export const useStore = create((set, get) => ({
       return;
     }
 
-    // Check if the latest project is already a fresh empty conversation
-    // We strictly check if it's the *active* one and has no nodes to avoid assuming state of inactive projects
+    // 1. Singleton Check: If the latest project is already a fresh empty conversation
     if (projects.length > 0 && projects[0].title === 'New Conversation') {
+      // A. If we are already on this project and it is empty -> Do nothing
       if (activeProjectId === projects[0].id && nodes.length === 0) {
         console.log("[Store] Reusing existing empty project");
-        return; // Already in a new empty chat
+        return;
       }
-      // Optional: If we want to switch to the existing empty one instead of creating ANOTHER empty one?
-      // Let's do that for better UX. Switch to it.
-      get().setActiveProject(projects[0].id);
-      return;
+
+      // B. If we are on a DIFFERENT project and the latest is empty -> Switch to it
+      if (activeProjectId !== projects[0].id) {
+        console.log("[Store] Switching to latest empty project");
+        await get().setActiveProject(projects[0].id);
+        return;
+      }
     }
 
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, error: null, isCreating: true });
     try {
       const res = await client.post('/projects', { name: "New Conversation" });
       const newProjectRaw = res.data;
@@ -113,16 +119,19 @@ export const useStore = create((set, get) => ({
       };
 
       set(state => ({
-        projects: [newProject, ...state.projects],
+        projects: [newProject, ...state.projects], // Prepend safely
         activeProjectId: newProject.id,
         nodes: [],   // Clear current view
         edges: [],
         activeNode: null,
+        activeProjectTheme: null,
         isLoading: false
       }));
     } catch (err) {
       console.error("[Store] createProject Error:", err);
       set({ error: "Failed to create project", isLoading: false });
+    } finally {
+      set({ isCreating: false });
     }
   },
 
