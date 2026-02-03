@@ -28,6 +28,10 @@ const nodeSchema = new mongoose.Schema({
     topicSummary: {
         type: String // Short summary for Topic Flow
     },
+    isBookmarked: {
+        type: Boolean,
+        default: false
+    },
     // Context Memory (Vector RAG)
     summary: {
         type: String,

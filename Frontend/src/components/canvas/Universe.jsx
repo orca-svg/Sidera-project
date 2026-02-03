@@ -142,6 +142,36 @@ export function Universe({ isInteractive = true }) {
         return () => clearTimeout(timer)
     }, [viewMode, setIsWarping])
 
+    const saveViewState = useStore(state => state.saveViewState)
+    const saveTimeoutRef = useRef(null)
+
+    const handleCameraChange = () => {
+        if (!cameraControlsRef.current) return
+
+        // Debounce Save (1s)
+        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+
+        saveTimeoutRef.current = setTimeout(() => {
+            if (!cameraControlsRef.current) return
+
+            const pos = new THREE.Vector3()
+            const target = new THREE.Vector3()
+            cameraControlsRef.current.getPosition(pos)
+            cameraControlsRef.current.getTarget(target)
+
+            // Calculate distance as 'zoom' approximation
+            const distance = pos.distanceTo(target)
+
+            saveViewState({
+                x: pos.x,
+                y: pos.y,
+                z: pos.z,
+                zoom: distance
+            })
+            // console.log("View State Saved", pos, distance)
+        }, 1000)
+    }
+
     return (
         <>
             {/* Edge Legend Overlay - Only visible in constellation view */}
@@ -174,68 +204,69 @@ export function Universe({ isInteractive = true }) {
                 style={{ height: '100%', width: '100%', background: '#050510' }}
                 gl={{ preserveDrawingBuffer: true }}
             >
-            {/* Scene Background (Matches CSS for correct Capture) */}
-            <color attach="background" args={['#050510']} />
-            <ambientLight intensity={0.5} />
-            <pointLight position={[10, 10, 10]} intensity={1} />
+                {/* Scene Background (Matches CSS for correct Capture) */}
+                <color attach="background" args={['#050510']} />
+                <ambientLight intensity={0.5} />
+                <pointLight position={[10, 10, 10]} intensity={1} />
 
-            {/* Effect: Warp Field (High Speed Particles) - Only visible during transition */}
-            <WarpField count={2000} />
+                {/* Effect: Warp Field (High Speed Particles) - Only visible during transition */}
+                <WarpField count={2000} />
 
-            <InteractiveBackground>
-                {/* Layer 1: Persistent Background Stars (Always visible with Parallax) */}
-                <Stars radius={300} depth={50} count={visualConfig.starCount} factor={4} saturation={0} fade speed={1} />
+                <InteractiveBackground>
+                    {/* Layer 1: Persistent Background Stars (Always visible with Parallax) */}
+                    <Stars radius={300} depth={50} count={visualConfig.starCount} factor={4} saturation={0} fade speed={1} />
 
-                {/* Layer 2: Construct/Knowledge Graph (Visible only in Constellation Mode) */}
-                <AnimatedUniverse>
+                    {/* Layer 2: Construct/Knowledge Graph (Visible only in Constellation Mode) */}
+                    <AnimatedUniverse>
 
-                    {/* Render Nodes (Stars) */}
-                    {nodes.map((node) => (
-                        <Star
-                            key={node.id}
-                            position={node.position}
-                            node={node}
-                            isSelected={activeNode === node.id}
-                            onClick={handleNodeClick(node.id)}
-                        />
-                    ))}
-
-                    {/* Render Edges (Constellations) */}
-                    {edges.map((edge) => {
-                        // Optimized: Use Map for O(1) lookup instead of Array.find O(n)
-                        const sourceNode = nodeMap.get(edge.source)
-                        const targetNode = nodeMap.get(edge.target)
-                        if (!sourceNode || !targetNode) return null
-
-                        return (
-                            <Constellation
-                                key={edge.id}
-                                start={sourceNode.position}
-                                end={targetNode.position}
-                                type={edge.type}
+                        {/* Render Nodes (Stars) */}
+                        {nodes.map((node) => (
+                            <Star
+                                key={node.id}
+                                position={node.position}
+                                node={node}
+                                isSelected={activeNode === node.id}
+                                onClick={handleNodeClick(node.id)}
                             />
-                        )
-                    })}
-                </AnimatedUniverse>
-            </InteractiveBackground>
+                        ))}
 
-            <CameraControls
-                ref={cameraControlsRef}
-                minDistance={2}
-                maxDistance={30}
-                dollySpeed={0.5} // Smoother zoom
-                smoothTime={0.8} // Smooth damping for transitions
-            />
+                        {/* Render Edges (Constellations) */}
+                        {edges.map((edge) => {
+                            // Optimized: Use Map for O(1) lookup instead of Array.find O(n)
+                            const sourceNode = nodeMap.get(edge.source)
+                            const targetNode = nodeMap.get(edge.target)
+                            if (!sourceNode || !targetNode) return null
 
-            {/* Post Processing: Bloom for Cyberpunk Glow (Conditional) */}
-            <EffectComposer>
-                {/* Provide children or correct props if Bloom needs to be conditional.
+                            return (
+                                <Constellation
+                                    key={edge.id}
+                                    start={sourceNode.position}
+                                    end={targetNode.position}
+                                    type={edge.type}
+                                />
+                            )
+                        })}
+                    </AnimatedUniverse>
+                </InteractiveBackground>
+
+                <CameraControls
+                    ref={cameraControlsRef}
+                    minDistance={2}
+                    maxDistance={30}
+                    dollySpeed={0.5} // Smoother zoom
+                    smoothTime={0.8} // Smooth damping for transitions
+                    onChange={handleCameraChange}
+                />
+
+                {/* Post Processing: Bloom for Cyberpunk Glow (Conditional) */}
+                <EffectComposer>
+                    {/* Provide children or correct props if Bloom needs to be conditional.
                      EffectComposer usually renders effects passed as children.
                      If intensity is 0, Bloom is effectively off, but we can also conditionally render it.
                   */}
-                <Bloom luminanceThreshold={0.2} luminanceSmoothing={0.9} intensity={visualConfig.bloomIntensity} />
-            </EffectComposer>
-        </Canvas>
+                    <Bloom luminanceThreshold={0.2} luminanceSmoothing={0.9} intensity={visualConfig.bloomIntensity} />
+                </EffectComposer>
+            </Canvas>
         </>
     )
 }

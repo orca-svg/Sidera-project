@@ -30,3 +30,14 @@ router.get('/:projectId', async (req, res) => {
 });
 
 module.exports = router;
+
+// Delete an edge
+router.delete('/:id', async (req, res) => {
+    try {
+        const edge = await Edge.findByIdAndDelete(req.params.id);
+        if (!edge) return res.status(404).json({ message: 'Edge not found' });
+        res.json({ message: 'Edge deleted' });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});

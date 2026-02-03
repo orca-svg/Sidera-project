@@ -6,7 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
     Menu, Plus, MessageSquare, X, Settings,
     HelpCircle, User, Mic, Send, Paperclip,
-    Sparkles, PanelLeftClose, PanelLeftOpen, Telescope, Camera
+    Sparkles, PanelLeftClose, PanelLeftOpen, Telescope, Camera,
+    Edit2, Trash2
 } from 'lucide-react'
 import clsx from 'clsx'
 import { TopicList } from './TopicList'
@@ -35,6 +36,10 @@ export function MainLayout() {
     const initializeProject = useStore(state => state.initializeProject)
     const viewMode = useStore(state => state.viewMode)
     const setViewMode = useStore(state => state.setViewMode)
+    const deleteProject = useStore(state => state.deleteProject)
+    const renameProject = useStore(state => state.renameProject)
+    const searchNodes = useStore(state => state.searchNodes)
+    const flyToNode = useStore(state => state.flyToNode)
     const user = useStore(state => state.user) // Get synced user from store
 
     const { logout } = useAuth()
@@ -43,6 +48,13 @@ export function MainLayout() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true)
     const [isHelpOpen, setIsHelpOpen] = useState(false) // New Help State
     const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+
+    // Feature States
+    const [searchQuery, setSearchQuery] = useState('')
+    const [searchResults, setSearchResults] = useState(null)
+    const [editingProjectId, setEditingProjectId] = useState(null)
+    const [renameValue, setRenameValue] = useState('')
+
     const chatEndRef = useRef(null)
     const inputRef = useRef(null)
     const isComposing = useRef(false) // IME State Ref
@@ -72,6 +84,36 @@ export function MainLayout() {
         if (!inputValue.trim()) return
         addNode(inputValue)
         setInputValue('')
+    }
+
+    // --- Feature Handlers ---
+    const handleSearch = async (e) => {
+        e.preventDefault()
+        if (!searchQuery.trim()) return
+        const results = await searchNodes(searchQuery)
+        setSearchResults(results)
+    }
+
+    const handleDeleteProject = async (projectId, e) => {
+        e.stopPropagation()
+        if (confirm("Are you sure you want to delete this star map? This cannot be undone.")) {
+            await deleteProject(projectId)
+        }
+    }
+
+    const startEditing = (project, e) => {
+        e.stopPropagation()
+        setEditingProjectId(project.id)
+        setRenameValue(project.title)
+    }
+
+    const executeRename = async (projectId) => {
+        if (!renameValue.trim()) {
+            setEditingProjectId(null)
+            return
+        }
+        await renameProject(projectId, renameValue)
+        setEditingProjectId(null)
     }
 
     // Auto-scroll
@@ -185,18 +227,41 @@ export function MainLayout() {
                 }}
             >
                 {/* Sidebar Header */}
-                <div className="p-4 flex items-center justify-between sticky top-0 z-10">
+                <div className="p-4 flex items-center justify-between sticky top-0 z-10 shrink-0">
                     <button
                         onClick={() => setIsSidebarOpen(false)}
                         className="p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors"
                     >
                         <PanelLeftClose size={20} />
                     </button>
-                    {/* <span className="text-gray-400 text-xs font-mono">HISTORY</span> Removed */}
+                    {/* Search Bar Toggle or Input */}
                 </div>
 
-                {/* View Mode Section: New Chat */}
-                <div className="px-4 pb-4">
+                {/* View Mode Section: Search & New Chat */}
+                <div className="px-4 pb-4 space-y-3 shrink-0">
+                    {/* Search Input */}
+                    <div className="relative group">
+                        <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                            <Telescope size={16} className="text-gray-500 group-focus-within:text-accent transition-colors" />
+                        </div>
+                        <input
+                            type="text"
+                            placeholder="Search stars..."
+                            className="w-full bg-black/20 border border-white/10 rounded-lg py-2 pl-9 pr-3 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-accent/40 focus:bg-black/40 transition-all"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleSearch(e)}
+                        />
+                        {searchQuery && (
+                            <button
+                                onClick={() => { setSearchQuery(''); setSearchResults(null); }}
+                                className="absolute inset-y-0 right-2 flex items-center text-gray-500 hover:text-white"
+                            >
+                                <X size={14} />
+                            </button>
+                        )}
+                    </div>
+
                     <button
                         onClick={createProject}
                         className="w-full h-10 flex items-center gap-3 px-4 bg-gray-800 hover:bg-gray-700 text-gray-200 hover:text-white rounded-full transition-all duration-200 border border-transparent hover:border-accent/30 group shadow-lg"
@@ -206,46 +271,122 @@ export function MainLayout() {
                     </button>
                 </div>
 
-                {/* History Section */}
+                {/* Content Section: History or Search Results */}
                 <div className="flex-1 overflow-y-auto px-2 py-2 custom-scrollbar">
-                    <div className="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                        Recent
-                    </div>
-                    <div className="space-y-1">
-                        {user?.isGuest ? (
-                            <div className="px-3 py-4 text-center">
-                                <span className="text-xs text-orange-400 bg-orange-400/10 px-2 py-1 rounded">
-                                    History not saved
-                                </span>
+                    {searchResults ? (
+                        <>
+                            <div className="px-3 mb-2 text-xs font-semibold text-accent uppercase tracking-wider flex items-center justify-between">
+                                <span>Search Results</span>
+                                <span className="text-[10px] bg-accent/10 px-1.5 py-0.5 rounded">{searchResults.length}</span>
                             </div>
-                        ) : projects.length === 0 ? (
-                            <div className="px-3 py-2 text-sm text-gray-500 italic">No history yet</div>
-                        ) : (
-                            projects.map(project => (
-                                <button
-                                    key={project.id}
-                                    onClick={() => setActiveProject(project.id)}
-                                    className={clsx(
-                                        "w-full text-left flex items-center gap-3 px-3 py-3 rounded-lg text-sm transition-all group relative overflow-hidden",
-                                        activeProjectId === project.id
-                                            ? "bg-accent/10 text-accent font-medium"
-                                            : "text-gray-400 hover:bg-white/5 hover:text-gray-200"
-                                    )}
-                                >
-                                    <MessageSquare size={16} className={activeProjectId === project.id ? "text-accent" : "text-gray-600 group-hover:text-gray-400"} />
-                                    <div className="flex-1 min-w-0">
-                                        <div className="truncate">{project.title}</div>
-                                        <div className="text-[10px] text-gray-600 truncate">
-                                            {new Date(project.lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                        </div>
+                            <div className="space-y-1">
+                                {searchResults.length === 0 ? (
+                                    <div className="px-3 py-4 text-center text-sm text-gray-500">
+                                        No stars found.
                                     </div>
-                                    {activeProjectId === project.id && (
-                                        <div className="absolute inset-y-0 left-0 w-1 bg-accent rounded-r-full" />
-                                    )}
-                                </button>
-                            ))
-                        )}
-                    </div>
+                                ) : (
+                                    searchResults.map(node => (
+                                        <button
+                                            key={node.id}
+                                            onClick={() => {
+                                                flyToNode(node.id);
+                                                if (window.innerWidth < 768) setIsSidebarOpen(false);
+                                            }}
+                                            className="w-full text-left flex items-start gap-3 px-3 py-3 rounded-lg text-sm hover:bg-white/5 group relative overflow-hidden transition-all"
+                                        >
+                                            <Sparkles size={14} className="mt-0.5 text-accent shrink-0" />
+                                            <div className="flex-1 min-w-0">
+                                                <div className="truncate text-gray-200 group-hover:text-white">{node.question}</div>
+                                                <div className="text-[10px] text-gray-500 truncate">
+                                                    Position: [{node.position[0].toFixed(1)}, {node.position[1].toFixed(1)}]
+                                                </div>
+                                            </div>
+                                        </button>
+                                    ))
+                                )}
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                Recent
+                            </div>
+                            <div className="space-y-1">
+                                {user?.isGuest ? (
+                                    <div className="px-3 py-4 text-center">
+                                        <span className="text-xs text-orange-400 bg-orange-400/10 px-2 py-1 rounded">
+                                            History not saved
+                                        </span>
+                                    </div>
+                                ) : projects.length === 0 ? (
+                                    <div className="px-3 py-2 text-sm text-gray-500 italic">No history yet</div>
+                                ) : (
+                                    projects.map(project => (
+                                        <div
+                                            key={project.id}
+                                            className={clsx(
+                                                "group relative w-full flex items-center rounded-lg text-sm transition-all",
+                                                activeProjectId === project.id ? "bg-accent/10" : "hover:bg-white/5"
+                                            )}
+                                        >
+                                            <button
+                                                onClick={() => setActiveProject(project.id)}
+                                                className="flex-1 flex items-center gap-3 px-3 py-3 min-w-0 text-left"
+                                            >
+                                                <MessageSquare size={16} className={activeProjectId === project.id ? "text-accent" : "text-gray-600 group-hover:text-gray-400"} />
+
+                                                {editingProjectId === project.id ? (
+                                                    <input
+                                                        type="text"
+                                                        className="bg-transparent border-b border-accent text-white focus:outline-none w-full"
+                                                        value={renameValue}
+                                                        onChange={(e) => setRenameValue(e.target.value)}
+                                                        onKeyDown={(e) => e.key === 'Enter' && executeRename(project.id)}
+                                                        onBlur={() => setEditingProjectId(null)}
+                                                        autoFocus
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    />
+                                                ) : (
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className={clsx("truncate", activeProjectId === project.id ? "text-accent font-medium" : "text-gray-400 group-hover:text-gray-200")}>
+                                                            {project.title}
+                                                        </div>
+                                                        <div className="text-[10px] text-gray-600 truncate">
+                                                            {new Date(project.lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </button>
+
+                                            {/* Hover Actions (Edit/Delete) - Only show when not editing */}
+                                            {editingProjectId !== project.id && (
+                                                <div className="absolute right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-900/80 rounded backdrop-blur-sm">
+                                                    <button
+                                                        onClick={(e) => startEditing(project, e)}
+                                                        className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded"
+                                                        title="Rename"
+                                                    >
+                                                        <Edit2 size={12} />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => handleDeleteProject(project.id, e)}
+                                                        className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 size={12} />
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            {activeProjectId === project.id && (
+                                                <div className="absolute inset-y-0 left-0 w-1 bg-accent rounded-r-full" />
+                                            )}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </>
+                    )}
                 </div>
 
                 {/* Bottom Section: Profile/Settings */}
@@ -393,17 +534,17 @@ export function MainLayout() {
                                                         className="text-xs px-2 py-0.5 rounded-full font-mono"
                                                         style={{
                                                             color: node.importance === 5 ? '#FFD700' :
-                                                                   node.importance === 4 ? '#00FFFF' :
-                                                                   node.importance === 3 ? '#88AAFF' :
-                                                                   node.importance === 2 ? '#FFFFFF' : '#888888',
+                                                                node.importance === 4 ? '#00FFFF' :
+                                                                    node.importance === 3 ? '#88AAFF' :
+                                                                        node.importance === 2 ? '#FFFFFF' : '#888888',
                                                             backgroundColor: `${node.importance === 5 ? '#FFD700' :
-                                                                              node.importance === 4 ? '#00FFFF' :
-                                                                              node.importance === 3 ? '#88AAFF' :
-                                                                              node.importance === 2 ? '#FFFFFF' : '#888888'}15`,
+                                                                node.importance === 4 ? '#00FFFF' :
+                                                                    node.importance === 3 ? '#88AAFF' :
+                                                                        node.importance === 2 ? '#FFFFFF' : '#888888'}15`,
                                                             border: `1px solid ${node.importance === 5 ? '#FFD700' :
-                                                                                  node.importance === 4 ? '#00FFFF' :
-                                                                                  node.importance === 3 ? '#88AAFF' :
-                                                                                  node.importance === 2 ? '#FFFFFF' : '#888888'}40`
+                                                                node.importance === 4 ? '#00FFFF' :
+                                                                    node.importance === 3 ? '#88AAFF' :
+                                                                        node.importance === 2 ? '#FFFFFF' : '#888888'}40`
                                                         }}
                                                     >
                                                         {'★'.repeat(node.importance)}

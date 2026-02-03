@@ -11,6 +11,16 @@ const projectSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
+    viewState: {
+        x: { type: Number, default: 0 },
+        y: { type: Number, default: 0 },
+        z: { type: Number, default: 0 },
+        zoom: { type: Number, default: 10 }
+    },
+    isPublic: {
+        type: Boolean,
+        default: false
+    },
     createdAt: {
         type: Date,
         default: Date.now
