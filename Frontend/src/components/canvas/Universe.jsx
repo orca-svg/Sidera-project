@@ -73,6 +73,7 @@ export function Universe({ isInteractive = true }) {
     const activeNode = useStore(state => state.activeNode)
     const setActiveNode = useStore(state => state.setActiveNode)
     const viewMode = useStore(state => state.viewMode)
+    const isWarping = useStore(state => state.isWarping)
     const setIsWarping = useStore(state => state.setIsWarping)
     const focusTarget = useStore(state => state.focusTarget)
     const settings = useStore(state => state.settings)
@@ -133,11 +134,10 @@ export function Universe({ isInteractive = true }) {
         }
 
         // 3. End Warp (after animation duration)
-        // CameraControls default transition is approx 1s unless configured. 
-        // We set a slightly longer warp for effect.
+        // User Request: edges visible 0.7s earlier (1000 -> 300)
         const timer = setTimeout(() => {
             setIsWarping(false)
-        }, 1000)
+        }, 300)
 
         return () => clearTimeout(timer)
     }, [viewMode, setIsWarping])
@@ -231,7 +231,8 @@ export function Universe({ isInteractive = true }) {
                         ))}
 
                         {/* Render Edges (Constellations) */}
-                        {edges.map((edge) => {
+                        {/* Logic: Show edges if warping to 'chat' (so they scale down with stars) OR if not warping (stable) */}
+                        {(viewMode === 'chat' || !isWarping) && edges.map((edge) => {
                             // Optimized: Use Map for O(1) lookup instead of Array.find O(n)
                             const sourceNode = nodeMap.get(edge.source)
                             const targetNode = nodeMap.get(edge.target)

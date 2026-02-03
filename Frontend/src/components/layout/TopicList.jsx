@@ -8,11 +8,9 @@ export function TopicList() {
   const { nodes, flyToNode, viewMode, setViewMode } = useStore();
   const [isOpen, setIsOpen] = useState(true);
 
-  // Filter important nodes for the Table of Contents
-  // Fallback: If no importance is set, or if it's the very first node, treat it as Alpha to ensure list isn't empty.
-  const tocNodes = nodes.filter((n, i) =>
-    n.importance === 'Alpha' || n.importance === 'Beta' || n.importance >= 3 || i === 0
-  );
+  // Show ALL turns in Topic Flow (not filtered by importance)
+  // Sort by creation order (oldest first)
+  const tocNodes = [...nodes].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
   if (nodes.length === 0) return null;
 
@@ -87,7 +85,7 @@ export function TopicList() {
                         ? "text-white font-medium text-sm"
                         : "text-gray-400 text-xs hover:text-gray-200"
                     )}>
-                      {node.topicSummary || (node.question ? (node.question.length > 30 ? node.question.substring(0, 30) + "..." : node.question) : null) || (node.keywords && node.keywords[0]) || "New Topic"}
+                      {node.shortTitle || node.topicSummary || (node.keywords && node.keywords[0]) || "New"}
                     </div>
                   </button>
                 ))

@@ -12,7 +12,7 @@ export function Star({ position, node, isSelected, onClick }) {
     const { viewMode } = useStore()
 
     // Destructure node properties
-    const { importance, keywords, topicSummary } = node
+    const { importance, keywords, topicSummary, starLabel } = node
 
     // 1. Determine "Class" based on Importance
     // 1. Granular Sidera-IS Visual Mapping (1-5)
@@ -132,8 +132,21 @@ export function Star({ position, node, isSelected, onClick }) {
                             borderColor, shadowColor
                         )}>
                             <span className={clsx("font-bold animate-pulse", themeColor)}>●</span>
-                            <span className="text-gray-100 font-mono tracking-wide">
-                                {topicSummary || (keywords && keywords[0]) || "NODE"}
+                            <span className="text-gray-100 font-mono tracking-wide text-center leading-tight">
+                                {(() => {
+                                    // Use AI-generated starLabel with fallback
+                                    let text = starLabel || topicSummary || (keywords && keywords[0]) || "NODE";
+
+                                    // If >8 chars, try to split by space for 2 lines (readability)
+                                    if (text.length > 8 && text.includes(' ')) {
+                                        const words = text.split(' ');
+                                        const mid = Math.ceil(words.length / 2);
+                                        const line1 = words.slice(0, mid).join(' ');
+                                        const line2 = words.slice(mid).join(' ');
+                                        return <>{line1}<br />{line2}</>;
+                                    }
+                                    return text;
+                                })()}
                             </span>
 
                             {/** Bookmark Toggle Button **/}

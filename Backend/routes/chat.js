@@ -320,7 +320,9 @@ router.post('/', async (req, res) => {
             keywords: aiResponse.keywords,
             importance: 3, // Temporary, will be updated by Sidera-IS
             importanceScore: 0,
-            summary: aiResponse.summary
+            summary: aiResponse.summary,
+            shortTitle: aiResponse.shortTitle || (aiResponse.keywords && aiResponse.keywords[0]) || "",
+            starLabel: aiResponse.starLabel || aiResponse.shortTitle || ""
         });
 
         // Generate Embeddings for the new node
@@ -334,37 +336,44 @@ router.post('/', async (req, res) => {
         const rootNode = await Node.findOne({ projectId }).sort({ createdAt: 1 });
         let rootScore = null;
 
-        // 2. Logic for Raw Score (Heuristics ONLY)
-        if (!rootNode && count === 0) {
-            // CASE A: FIRST NODE (The Anchor)
-            const isProperQuestion = message.length > 5 && (/\?|까\?|나요\?|왜|무엇|어떻게/i.test(message));
+        // 2. Check for Error/Failed Response
+        const answerText = (newNode.answer || "").toLowerCase();
+        const isError = /error|failed|응답.*못|답변.*못/.test(answerText) ||
+            answerText.length < 10; // Very short answers likely errors
 
-            if (isProperQuestion) {
-                finalImportanceScore = 1.0; // Max Score
-                rootScore = 1.0; // Self-reference for first node
-                console.log("[Sidera-IS] First Node Anchor: Boosted to Max Importance");
-            }
+        if (isError) {
+            // Error case: No stars
+            finalImportanceScore = 0;
+            newNode.importance = 0;
+            newNode.importanceScore = 0;
+            console.log("[Sidera-IS] Error/Failed response detected - No stars");
+        } else if (!rootNode && count === 0) {
+            // CASE A: FIRST NODE (The Anchor) - Always 5 stars unless error
+            finalImportanceScore = 1.0; // Max Score
+            rootScore = 1.0; // Self-reference for first node
+            newNode.importance = 5; // Direct assignment
+            newNode.importanceScore = 1.0;
+            console.log("[Sidera-IS] First Node: Always 5 stars");
         } else {
             // CASE B: SUBSEQUENT NODES (Standard Heuristics)
-            // Note: We reverted RootSim from Metrics, so just call standard calculation
             const text = (newNode.answer || "") + " " + (newNode.question || "");
             finalImportanceScore = aiService.calculateImportanceMetrics(text, "assistant");
 
             if (rootNode) {
                 rootScore = rootNode.importanceScore;
             }
+
+            // 3. Finalize Star Rating (Dynamic Percentiles with Weighted Anchor)
+            const projectNodes = await Node.find({ projectId }).select('importanceScore');
+            const scores = projectNodes.map(n => n.importanceScore || 0);
+            scores.push(finalImportanceScore);
+
+            // Pass 'rootScore' to adjust percentiles
+            const finalStarRating = aiService.calculateStarRating(finalImportanceScore, scores, rootScore);
+
+            newNode.importance = finalStarRating;
+            newNode.importanceScore = finalImportanceScore;
         }
-
-        // 3. Finalize Star Rating (Dynamic Percentiles with Weighted Anchor)
-        const projectNodes = await Node.find({ projectId }).select('importanceScore');
-        const scores = projectNodes.map(n => n.importanceScore || 0);
-        scores.push(finalImportanceScore);
-
-        // Pass 'rootScore' to adjust percentiles
-        const finalStarRating = aiService.calculateStarRating(finalImportanceScore, scores, rootScore);
-
-        newNode.importance = finalStarRating;
-        newNode.importanceScore = finalImportanceScore;
         // ----------------------------------------------
 
         // Position Logic: Similarity-based (Sidera Constellation)
@@ -423,15 +432,22 @@ router.post('/', async (req, res) => {
                 return { node: cand, replyScore, topicScore, index };
             });
 
-            // 3. Select EXPLICIT Edge (Top-1)
+            // 3. Select EXPLICIT Edge - Based on HIGH semantic similarity (docs: 0.75+)
+            // If semantic similarity is high, the topics are strongly related (e.g., 블랙홀 ↔ 화이트홀 = 우주)
+            const SEMANTIC_EXPLICIT_THRESHOLD = 0.55; // Lowered from 0.75 for better coverage
+
             const explicitCandidates = scoredCandidates
-                .filter(c => c.replyScore >= SideraConfig.Connect.explicit.threshold)
-                .sort((a, b) => b.replyScore - a.replyScore)
-                .slice(0, SideraConfig.Connect.explicit.limit); // Top-1
+                .filter(c => {
+                    const rawSim = cosineSimilarity(newNode.summaryEmbedding, c.node.summaryEmbedding);
+                    return rawSim >= SEMANTIC_EXPLICIT_THRESHOLD; // High semantic similarity = explicit edge
+                })
+                .sort((a, b) => b.topicScore - a.topicScore) // Sort by topicScore for best matches
+                .slice(0, SideraConfig.Connect.explicit.limit); // Top-2 matches
 
             for (const cand of explicitCandidates) {
                 const candId = cand.node._id.toString();
                 const isLastNode = actualLastNode && (candId === actualLastNode._id.toString());
+                const rawSim = cosineSimilarity(newNode.summaryEmbedding, cand.node.summaryEmbedding);
 
                 if (isLastNode) {
                     // Upgrade Temporal
@@ -439,30 +455,35 @@ router.post('/', async (req, res) => {
                     if (tEdge) {
                         tEdge.type = 'explicit';
                         await tEdge.save();
-                        console.log(`[Connect] Upgraded Temporal -> Explicit (Score: ${cand.replyScore.toFixed(3)})`);
+                        console.log(`[Connect] Upgraded Temporal -> Explicit (Similarity: ${rawSim.toFixed(3)})`);
                     }
                 } else {
                     const edge = new Edge({ projectId, source: candId, target: savedNode._id, type: 'explicit' });
                     await edge.save();
                     newEdges.push(edge);
-                    console.log(`[Connect] New Explicit Edge (Score: ${cand.replyScore.toFixed(3)})`);
+                    console.log(`[Connect] New Explicit Edge (Similarity: ${rawSim.toFixed(3)})`);
                 }
             }
 
-            // 4. Select IMPLICIT Edges (Top-2)
+            // 4. Select IMPLICIT Edges - Lower semantic similarity but still related
             const connectedIds = newEdges.map(e => e.source.toString()); // temporal/explicit sources
+            const SEMANTIC_IMPLICIT_THRESHOLD = 0.35;
 
             const implicitCandidates = scoredCandidates
                 .filter(c => !connectedIds.includes(c.node._id.toString())) // Don't duplicate
-                .filter(c => c.topicScore >= SideraConfig.Connect.implicit.threshold)
+                .filter(c => {
+                    const rawSim = cosineSimilarity(newNode.summaryEmbedding, c.node.summaryEmbedding);
+                    return rawSim >= SEMANTIC_IMPLICIT_THRESHOLD && rawSim < SEMANTIC_EXPLICIT_THRESHOLD;
+                })
                 .sort((a, b) => b.topicScore - a.topicScore)
-                .slice(0, SideraConfig.Connect.implicit.limit); // Top-2
+                .slice(0, SideraConfig.Connect.implicit.limit); // Top-3
 
             for (const cand of implicitCandidates) {
+                const rawSim = cosineSimilarity(newNode.summaryEmbedding, cand.node.summaryEmbedding);
                 const edge = new Edge({ projectId, source: cand.node._id, target: savedNode._id, type: 'implicit' });
                 await edge.save();
                 newEdges.push(edge);
-                console.log(`[Connect] New Implicit Edge (Score: ${cand.topicScore.toFixed(3)})`);
+                console.log(`[Connect] New Implicit Edge (Similarity: ${rawSim.toFixed(3)})`);
             }
         }
 

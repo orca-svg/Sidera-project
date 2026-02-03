@@ -349,7 +349,11 @@ export function MainLayout() {
                                                 ) : (
                                                     <div className="flex-1 min-w-0">
                                                         <div className={clsx("truncate", activeProjectId === project.id ? "text-accent font-medium" : "text-gray-400 group-hover:text-gray-200")}>
-                                                            {project.title}
+                                                            {(() => {
+                                                                // Show first conversation content using AI-generated shortTitle
+                                                                const firstNode = nodes.find(n => n.projectId === project.id);
+                                                                return firstNode?.shortTitle || firstNode?.topicSummary || firstNode?.question?.substring(0, 10) || project.title;
+                                                            })()}
                                                         </div>
                                                         <div className="text-[10px] text-gray-600 truncate">
                                                             {new Date(project.lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
