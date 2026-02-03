@@ -14,22 +14,45 @@ export function Star({ position, node, isSelected, onClick }) {
     // Destructure node properties
     const { importance, keywords, topicSummary, starLabel } = node
 
-    // 1. Determine "Class" based on Importance
-    // 1. Granular Sidera-IS Visual Mapping (1-5)
-    // 5: Critical (Gold/Large) - Supernova
-    // 4: High (Cyan/Med-Large) - Giant
-    // 3: Medium (Blue/Med) - Main Seq
-    // 2: Low (White/Small) - Dwarf
-    // 1: Trivial (Grey/Tiny) - Dust
-
-    const isAlpha = importance >= 5
+    // 2. Visual Config based on Importance
+    const getConfig = () => {
+        switch (importance) {
+            case 5: return {
+                distort: 0.4, speed: 2, roughness: 0.1,
+                haloOpacity: 0.1, haloScale: 3,
+                sparkles: 15, sparkleScale: 8
+            }
+            case 4: return {
+                distort: 0.3, speed: 1.5, roughness: 0.2,
+                haloOpacity: 0.05, haloScale: 2.5,
+                sparkles: 8, sparkleScale: 6
+            }
+            case 3: return {
+                distort: 0.2, speed: 1.0, roughness: 0.3,
+                haloOpacity: 0, haloScale: 0,
+                sparkles: 0, sparkleScale: 0
+            }
+            case 2: return {
+                distort: 0.1, speed: 0.5, roughness: 0.4,
+                haloOpacity: 0, haloScale: 0,
+                sparkles: 0, sparkleScale: 0
+            }
+            default: return {
+                distort: 0, speed: 0, roughness: 0.6, // Static
+                haloOpacity: 0, haloScale: 0,
+                sparkles: 0, sparkleScale: 0
+            }
+        }
+    }
+    const config = getConfig()
+    const useDistort = importance >= 2
 
     const getSize = () => {
         switch (importance) {
             case 5: return 0.18
-            case 4: return 0.12
-            case 3: return 0.08
-            case 2: return 0.05
+            case 4: return 0.14 // Slightly larger for visibility
+            case 3: return 0.10
+            case 2: return 0.06
             default: return 0.03
         }
     }
@@ -37,20 +60,20 @@ export function Star({ position, node, isSelected, onClick }) {
 
     const getColor = () => {
         switch (importance) {
-            case 5: return { color: '#FFD700', emissive: '#FFaa00', intensity: 4.0 } // Gold
-            case 4: return { color: '#00FFFF', emissive: '#0088FF', intensity: 3.0 } // Cyan
-            case 3: return { color: '#88AAFF', emissive: '#5588EE', intensity: 2.0 } // Blue
-            case 2: return { color: '#FFFFFF', emissive: '#888888', intensity: 1.2 } // White
-            default: return { color: '#888888', emissive: '#444444', intensity: 0.5 } // Grey
+            case 5: return { color: '#FFD700', emissive: '#FFaa00', intensity: 4.0 }
+            case 4: return { color: '#00FFFF', emissive: '#0088FF', intensity: 3.0 }
+            case 3: return { color: '#88AAFF', emissive: '#5588EE', intensity: 2.0 }
+            case 2: return { color: '#FFFFFF', emissive: '#888888', intensity: 1.2 }
+            default: return { color: '#888888', emissive: '#444444', intensity: 0.5 }
         }
     }
 
     const { color, emissive, intensity } = getColor()
-    const themeColor = isAlpha ? 'text-yellow-400' : 'text-cyan-400'
-    const borderColor = isAlpha ? 'border-yellow-500/50' : 'border-cyan-500/50'
-    const shadowColor = isAlpha ? 'shadow-yellow-500/20' : 'shadow-cyan-500/20'
-    const lineColor = isAlpha ? 'bg-yellow-400' : 'bg-cyan-400'
-    const lineShadow = isAlpha ? 'shadow-[0_0_10px_#fbbf24]' : 'shadow-[0_0_10px_cyan]'
+    const themeColor = importance >= 5 ? 'text-yellow-400' : 'text-cyan-400'
+    const borderColor = importance >= 5 ? 'border-yellow-500/50' : 'border-cyan-500/50'
+    const shadowColor = importance >= 5 ? 'shadow-yellow-500/20' : 'shadow-cyan-500/20'
+    const lineColor = importance >= 5 ? 'bg-yellow-400' : 'bg-cyan-400'
+    const lineShadow = importance >= 5 ? 'shadow-[0_0_10px_#fbbf24]' : 'shadow-[0_0_10px_cyan]'
 
     useFrame((state, delta) => {
         if (meshRef.current) {
@@ -66,9 +89,8 @@ export function Star({ position, node, isSelected, onClick }) {
         }
     })
 
-    // Label: Show in Constellation Mode for (Hovered / Selected / Alpha)
-    // "Alpha" nodes are landmarks, so they should always be visible in this mode.
-    const showLabel = viewMode === 'constellation' && (hovered || isSelected || isAlpha);
+    // Label Logic
+    const showLabel = viewMode === 'constellation' && (hovered || isSelected || importance >= 5);
 
     return (
         <group position={position} onClick={onClick}>
@@ -77,16 +99,16 @@ export function Star({ position, node, isSelected, onClick }) {
                 onPointerOver={(e) => { e.stopPropagation(); setHover(true); }}
                 onPointerOut={(e) => setHover(false)}
             >
-                {/* Material */}
-                {isAlpha ? (
+                {/* Material Switching */}
+                {useDistort ? (
                     <MeshDistortMaterial
                         color={color}
                         emissive={emissive}
                         emissiveIntensity={isSelected || hovered ? intensity * 2 : intensity}
-                        roughness={0.1}
+                        roughness={config.roughness}
                         metalness={0.9}
-                        distort={0.4}
-                        speed={2}
+                        distort={config.distort}
+                        speed={config.speed}
                         toneMapped={false}
                     />
                 ) : (
@@ -94,7 +116,7 @@ export function Star({ position, node, isSelected, onClick }) {
                         color={color}
                         emissive={emissive}
                         emissiveIntensity={intensity}
-                        roughness={0.1}
+                        roughness={config.roughness}
                         metalness={0.1}
                         transmission={0.9}
                         thickness={0.5}
@@ -103,29 +125,17 @@ export function Star({ position, node, isSelected, onClick }) {
                 )}
             </Sphere>
 
-            {/* HUD Pin UI (Moved outside Sphere to prevent self-occlusion) */}
+            {/* HUD Pin UI */}
             {showLabel && (
                 <Html
-                    position={[0, baseSize, 0]} // Start at top of the sphere
-                    center // Centers the div on the coordinate
-                    distanceFactor={15} // Adjusted to 1.5x (User request)
+                    position={[0, baseSize, 0]}
+                    center
+                    distanceFactor={15}
                     zIndexRange={[100, 0]}
-                    // occlude="blending" // Optional: smoother occlusion
                     style={{ pointerEvents: 'none' }}
                 >
-                    {/* 
-                        Layout: Flex Column Reverse 
-                        - Card (Top)
-                        - Line (Bottom)
-                        We offset translateY to make the bottom of the line touch the anchor point.
-                        Since 'center' centers the whole block, we shift UP by 50% of height.
-                    */}
                     <div className="flex flex-col-reverse items-center transform -translate-y-[50%] pb-2">
-
-                        {/* 1. Connection Line (Grows Upwards) */}
                         <div className={clsx("w-px h-10 transition-all duration-300", lineColor, lineShadow)} />
-
-                        {/* 2. Info Card (Glass Panel) */}
                         <div className={clsx(
                             "mb-1 px-3 py-1.5 rounded-lg border backdrop-blur-md shadow-xl transition-all duration-300 pointer-events-auto flex items-center gap-2",
                             "bg-black/80 text-sm whitespace-nowrap",
@@ -136,12 +146,11 @@ export function Star({ position, node, isSelected, onClick }) {
                                 {topicSummary || starLabel || (keywords && keywords[0]) || "NODE"}
                             </span>
                         </div>
-
                     </div>
                 </Html>
             )}
 
-            {/* Bookmark Visual Indicator (Orbiting Ring) */}
+            {/* Bookmark Ring */}
             {node.isBookmarked && (
                 <mesh rotation={[Math.PI / 2, 0, 0]}>
                     <ringGeometry args={[baseSize * 1.5, baseSize * 1.6, 32]} />
@@ -149,21 +158,28 @@ export function Star({ position, node, isSelected, onClick }) {
                 </mesh>
             )}
 
-            {/* Halo for Alpha Stars */}
-            {isAlpha && (
-                <Sphere ref={haloRef} args={[baseSize * 3, 16, 16]}>
+            {/* Scalable Halo */}
+            {config.haloOpacity > 0 && (
+                <Sphere ref={haloRef} args={[baseSize * config.haloScale, 16, 16]}>
                     <meshBasicMaterial
                         color={emissive}
                         transparent
-                        opacity={0.1}
+                        opacity={config.haloOpacity}
                         wireframe
                     />
                 </Sphere>
             )}
 
-            {/* Particles */}
-            {isAlpha && (
-                <Sparkles count={15} scale={baseSize * 8} size={2} speed={0.4} opacity={0.5} color={color} />
+            {/* Scalable Sparkles */}
+            {config.sparkles > 0 && (
+                <Sparkles
+                    count={config.sparkles}
+                    scale={baseSize * config.sparkleScale}
+                    size={2}
+                    speed={0.4}
+                    opacity={0.5}
+                    color={color}
+                />
             )}
         </group>
     )
