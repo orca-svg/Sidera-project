@@ -179,6 +179,7 @@ router.post('/', async (req, res) => {
 
             // 5. Generate Ephemeral Edges (Sidera-Connect)
             const newEdges = [];
+            const { SideraConfig } = aiService; // Ensure this is available
 
             // A. Temporal Edge
             if (lastNode) {
@@ -192,28 +193,39 @@ router.post('/', async (req, res) => {
 
             // B. Semantic Edges (Against History)
             if (summaryEmbedding && history && history.length > 0) {
-                const candidates = history.map(n => ({
-                    node: n,
-                    score: cosineSimilarity(summaryEmbedding, n.summaryEmbedding)
-                })).filter(c => (c.node.id || c.node._id) !== (lastNode?.id || lastNode?._id));
+                // Calculate Scores
+                const scoredCandidates = history.map((n, index) => {
+                    const sim = cosineSimilarity(summaryEmbedding, n.summaryEmbedding);
+                    const timeDiff = Math.abs((history.length - 1) - index); // Approx distance from end
 
-                candidates.sort((a, b) => b.score - a.score);
+                    // Reply Score
+                    const replyDecay = Math.exp(-timeDiff / 20);
+                    const replyScore = sim * replyDecay;
+
+                    // Topic Score
+                    const topicDecay = Math.exp(-timeDiff / SideraConfig.Connect.implicit.decayLambda);
+                    const topicScore = sim * topicDecay;
+
+                    return { node: n, replyScore, topicScore };
+                }).filter(c => (c.node.id || c.node._id) !== (lastNode?.id || lastNode?._id));
+
+                const candidates = scoredCandidates.sort((a, b) => b.replyScore - a.replyScore); // Sort by reply score primarily
 
                 let explicitCount = 0;
                 let implicitCount = 0;
 
                 for (const cand of candidates) {
-                    // Total Max Constraints (e.g. 5) to prevent hairball, but allow multiple explicit
                     if (explicitCount + implicitCount >= 5) break;
 
                     const candId = cand.node.id || cand.node._id;
                     const isLastNode = lastNode && (candId === (lastNode.id || lastNode._id));
 
                     let chosenType = null;
-                    if (cand.score >= 0.89) {
+                    // Use SideraConfig Thresholds
+                    if (cand.replyScore >= SideraConfig.Connect.explicit.threshold && explicitCount < SideraConfig.Connect.explicit.limit) {
                         chosenType = 'explicit';
                         explicitCount++;
-                    } else if (cand.score >= 0.65 && explicitCount + implicitCount < 5) {
+                    } else if (cand.topicScore >= SideraConfig.Connect.implicit.threshold && explicitCount + implicitCount < 5) { // reusing 5 max total for safety
                         chosenType = 'implicit';
                         implicitCount++;
                     }
@@ -224,7 +236,7 @@ router.post('/', async (req, res) => {
                             const existingEdge = newEdges.find(e => e.source === candId && e.target === ephemeralNode.id);
                             if (existingEdge) {
                                 existingEdge.type = chosenType; // Upgrade visual priority
-                                console.log(`[Guest] Upgraded Temporal Edge to ${chosenType} (Score: ${cand.score.toFixed(2)})`);
+                                console.log(`[Guest] Upgraded Temporal Edge to ${chosenType} (Score: ${cand.replyScore.toFixed(2)})`);
                             }
                         } else {
                             newEdges.push({

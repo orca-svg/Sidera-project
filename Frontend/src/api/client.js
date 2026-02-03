@@ -19,4 +19,18 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
+// Handle 401 & 403 (Token Expired/Invalid)
+client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+      console.warn("[API] Session expired. Logging out...");
+      localStorage.removeItem('sidera_user');
+      // Force reload to reset state (simple logout)
+      window.location.href = '/';
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default client;
