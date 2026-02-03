@@ -19,4 +19,20 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
+// Handle Auth Errors (401/403)
+client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+      console.warn("[Auth] Session expired or unauthorized. Logging out...");
+      // Clear storage
+      localStorage.removeItem('sidera_user');
+      // Force reload to reset AuthContext state (simplest way to sync)
+      // Ideally we'd use a callback, but client is outside React context
+      window.location.reload();
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default client;

@@ -318,24 +318,32 @@ router.post('/', async (req, res) => {
 
         const savedNode = await newNode.save();
 
-        // E. Sidera-Connect: Hybrid Edge Logic
+        // E. Sidera-Connect: Hybrid Tree + Cluster Logic
         const newEdges = [];
 
-        // 1. Temporal Edge (Backbone) - Always link to immediate predecessor ($t-1$)
-        if (actualLastNode) {
-            const temporalEdge = new Edge({
+        // 1. Branch Edge (Tree Structure)
+        // Connect to parentId if provided, otherwise to the last node (linear default)
+        const parentId = req.body.parentId || (actualLastNode ? actualLastNode._id : null);
+
+        if (parentId) {
+            const branchEdge = new Edge({
                 projectId,
-                source: actualLastNode._id,
+                source: parentId,
                 target: savedNode._id,
-                type: 'temporal'
+                type: 'branch'
             });
-            await temporalEdge.save();
-            newEdges.push(temporalEdge);
+            await branchEdge.save();
+            newEdges.push(branchEdge);
+
+            // Also update the node's parentId if it wasn't set explicitly in the model creation above
+            // (In this flow, we set it via Edge, but we should also save it to Node for easy traversal)
+            savedNode.parentId = parentId;
+            await savedNode.save();
         }
 
-        // 2. Semantic Edges (Explicit / Implicit)
+        // 2. Related Edges (Clustering)
         if (newNode.summaryEmbedding && newNode.summaryEmbedding.length > 0) {
-            // Fetch potential candidates (Top 50 recent nodes to keep it fast)
+            // Fetch potential candidates (Top 50 recent nodes)
             const recentNodes = await Node.find({ projectId, _id: { $ne: savedNode._id } })
                 .sort({ createdAt: -1 })
                 .limit(50)
@@ -344,43 +352,29 @@ router.post('/', async (req, res) => {
             const candidates = recentNodes.map(n => ({
                 node: n,
                 score: cosineSimilarity(newNode.summaryEmbedding, n.summaryEmbedding)
-            })).filter(c => c.node._id.toString() !== actualLastNode?._id.toString()); // Exclude t-1 (already temporal)
+            })).filter(c => c.node._id.toString() !== parentId?.toString()); // Exclude parent (already branched)
 
             // Sort by score
             candidates.sort((a, b) => b.score - a.score);
 
-            let explicitCount = 0;
-            let implicitCount = 0;
+            let relatedCount = 0;
 
             for (const cand of candidates) {
-                // Max Constraints
-                if (explicitCount >= 1 && implicitCount >= 2) break;
+                // Max 2 Related Edges
+                if (relatedCount >= 2) break;
 
-                if (cand.score >= 0.85 && explicitCount < 1) {
-                    // Explicit Edge (Direct Thread)
+                // Threshold: 0.8 for strong semantic relation
+                if (cand.score >= 0.8) {
                     const edge = new Edge({
                         projectId,
                         source: cand.node._id,
                         target: savedNode._id,
-                        type: 'explicit'
+                        type: 'related'
                     });
                     await edge.save();
                     newEdges.push(edge);
-                    explicitCount++;
-                    console.log(`[Link] Explicit Edge to "${cand.node.question.substring(0, 20)}..." (Score: ${cand.score.toFixed(2)})`);
-                }
-                else if (cand.score >= 0.65 && explicitCount + implicitCount < 3) {
-                    // Implicit Edge (Contextual)
-                    const edge = new Edge({
-                        projectId,
-                        source: cand.node._id,
-                        target: savedNode._id,
-                        type: 'implicit'
-                    });
-                    await edge.save();
-                    newEdges.push(edge);
-                    implicitCount++;
-                    console.log(`[Link] Implicit Edge to "${cand.node.question.substring(0, 20)}..." (Score: ${cand.score.toFixed(2)})`);
+                    relatedCount++;
+                    console.log(`[Link] Related Edge to "${cand.node.question.substring(0, 20)}..." (Score: ${cand.score.toFixed(2)})`);
                 }
             }
         }

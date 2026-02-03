@@ -14,7 +14,32 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const storedUser = localStorage.getItem('sidera_user');
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      try {
+        const parsedUser = JSON.parse(storedUser);
+
+        // If it's a guest, just restore
+        if (parsedUser.isGuest) {
+          setUser(parsedUser);
+          return;
+        }
+
+        // Check Token Expiry
+        if (parsedUser.token) {
+          const decoded = jwtDecode(parsedUser.token);
+          const currentTime = Date.now() / 1000;
+
+          if (decoded.exp < currentTime) {
+            console.warn("[Auth] Token expired, clearing session.");
+            localStorage.removeItem('sidera_user');
+            setUser(null);
+          } else {
+            setUser(parsedUser);
+          }
+        }
+      } catch (err) {
+        console.error("[Auth] Failed to restore session", err);
+        localStorage.removeItem('sidera_user');
+      }
     }
   }, []);
 

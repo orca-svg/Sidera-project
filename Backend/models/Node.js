@@ -6,6 +6,11 @@ const nodeSchema = new mongoose.Schema({
         ref: 'Project',
         required: true
     },
+    parentId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Node',
+        required: false
+    },
     // Merged Question (User) and Answer (AI)
     question: {
         type: String,

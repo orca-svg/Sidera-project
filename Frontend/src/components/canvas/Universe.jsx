@@ -180,20 +180,14 @@ export function Universe({ isInteractive = true }) {
                     <div className="text-xs font-medium text-gray-300 mb-2">연결 타입</div>
                     <div className="space-y-2 text-xs text-gray-400">
                         <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-1">
-                                <div className="w-8 h-px bg-gray-500 opacity-40" style={{ backgroundImage: 'linear-gradient(to right, #445566 50%, transparent 50%)', backgroundSize: '4px 1px' }} />
-                            </div>
-                            <span>시간순 연결</span>
-                        </div>
-                        <div className="flex items-center gap-3">
                             <div className="w-8 h-0.5 bg-cyan-400" style={{ boxShadow: '0 0 4px #00FFFF' }} />
-                            <span>명시적 연결 (≥0.85)</span>
+                            <span>탐사 경로 (Branch)</span>
                         </div>
                         <div className="flex items-center gap-3">
                             <div className="flex items-center gap-1">
                                 <div className="w-8 h-px bg-blue-300 opacity-50" style={{ backgroundImage: 'linear-gradient(to right, #88AAFF 50%, transparent 50%)', backgroundSize: '4px 1px' }} />
                             </div>
-                            <span>암묵적 연결 (≥0.65)</span>
+                            <span>연관 탐사 (Related)</span>
                         </div>
                     </div>
                 </div>

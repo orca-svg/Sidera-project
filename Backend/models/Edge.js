@@ -18,8 +18,9 @@ const edgeSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['temporal', 'explicit', 'implicit'],
-        default: 'temporal'
+        // E. Sidera-Connect: Added 'branch' and 'related'
+        enum: ['temporal', 'explicit', 'implicit', 'branch', 'related'],
+        default: 'branch'
     },
     createdAt: {
         type: Date,
