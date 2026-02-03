@@ -464,11 +464,18 @@ router.post('/', async (req, res) => {
             const history = await Node.find({ projectId, _id: { $ne: savedNode._id } })
                 .sort({ createdAt: -1 })
                 .limit(50)
-                .select('summaryEmbedding question answer date importanceScore');
+                .select('summaryEmbedding question answer date importanceScore topicSummary');
 
             // Calculate Scores for ALL candidates
             const scoredCandidates = history.map((cand, index) => {
                 const sim = cosineSimilarity(newNode.summaryEmbedding, cand.summaryEmbedding);
+
+                // DEBUG LOG: Check why score is high
+                if (sim > 0.5) {
+                    console.log(`[Similarity Check] New: "${newNode.topicSummary}" vs Cand: "${cand.topicSummary || 'Unknown'}" (ID: ${cand._id})`);
+                    console.log(`[Similarity Check] Score: ${sim.toFixed(4)}`);
+                }
+
                 const timeDiff = Math.abs(index); // Just use index as proxy for 'turn distance'
 
                 // (A) Reply Score (Short-term focus)
@@ -485,7 +492,7 @@ router.post('/', async (req, res) => {
 
             // 3. Select EXPLICIT Edge - Based on HIGH semantic similarity (docs: 0.75+)
             // If semantic similarity is high, the topics are strongly related (e.g., 블랙홀 ↔ 화이트홀 = 우주)
-            const SEMANTIC_EXPLICIT_THRESHOLD = 0.55; // Lowered from 0.75 for better coverage
+            const SEMANTIC_EXPLICIT_THRESHOLD = 0.75; // Raised to 0.75 to prevent unrelated connections
 
             const explicitCandidates = scoredCandidates
                 .filter(c => {

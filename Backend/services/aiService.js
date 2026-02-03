@@ -147,7 +147,14 @@ function calculateStarRating(score, scoreHistory = [], rootScore = null) {
 async function getEmbedding(text) {
     if (!apiKey || !text) return null;
     try {
-        const result = await embeddingModel.embedContent(text);
+        // DEBUG LOG
+        console.log(`[Embedding Input] "${text.substring(0, 40)}..." (len: ${text.length})`);
+
+        // Specify taskType for better separation
+        const result = await embeddingModel.embedContent({
+            content: { role: "user", parts: [{ text }] },
+            taskType: "SEMANTIC_SIMILARITY"
+        });
         return result.embedding.values;
     } catch (error) {
         console.error("[Embedding Error]", error);
