@@ -206,16 +206,23 @@
 - 노드 색상: 중요도별 (5★=#FFD700, 4★=#00FFFF, 3★=#88AAFF, 2★=#FFF, 1★=#888)
 - 엣지: 연한 파란색 선으로 연결
 
-### D. 완료된 별자리 배경 이미지
+### D. 완료된 별자리 배경 렌더링 (3D Rendering)
 
-다른 대화의 별자리 모드에서 모든 완료된 별자리 이미지가 배경에 표시됩니다.
+기존의 정적 이미지 방식에서 벗어나, 실제 3D 데이터(노드/엣지)를 기반으로 배경 별자리를 렌더링하여 깊이감과 통일성을 제공합니다.
 
-| 속성 | 값 |
-|------|------|
-| **크기** | 28×28 Three.js units |
-| **투명도** | 0.13 (은은한 배경 효과) |
-| **위치** | z = -70 ~ -110 (깊은 배경) |
-| **배치** | projectId 해시 기반 결정적 위치 |
+| 속성 | 상세 내용 |
+|------|-----------|
+| **렌더링 방식** | **Real-time 3D Structure** (Not Image) |
+| **구성 요소** | **Stars** (MeshDistortMaterial), **Edges** (Lines), **Orbital Particles** |
+| **위치 분산** | **X: ±80, Y: ±40, Z: -60 ~ -120** (광활한 우주 배경) |
+| **스케일링** | 원근감(Perspective)을 위해 거리에 따라 자동 축소 |
+| **표시 조건** | `viewMode === 'constellation'`일 때만 표시 (채팅 모드에서는 숨김) |
+| **예외 처리** | 현재 보고 있는 프로젝트(Self)는 배경에서 제외 |
+
+**시각적 디테일 (Visual Polish):**
+- **Stars**: 중요도(1-5)에 따른 크기 및 색상 차별화 (Gold/Cyan Emissive Glow).
+- **Distortion**: `MeshDistortMaterial`을 사용하여 별이 은은하게 일렁이는 효과 적용.
+- **Orbital Particles**: 1등성/2등성 별 주위를 공전하는 미세한 파티클 추가 (속도/밝기 최적화로 눈부심 방지).
 
 ### E. Backend 스키마 (Project)
 
@@ -223,17 +230,24 @@
 status: { type: String, enum: ['active', 'completed'], default: 'active' }
 completedAt: { type: Date, default: null }
 constellationName: { type: String, default: null }
-constellationImageUrl: { type: String, default: null }  // base64 data URI
+constellationImageUrl: { type: String, default: null }  // base64 data URI (Legacy support or fallback)
 ```
 
 ### F. Frontend Store 상태
 
 ```javascript
-completedImages: []  // [{ projectId, constellationName, imageUrl }]
+completedImages: []
+// 구조:
+// [{
+//    projectId,
+//    constellationName,
+//    nodes: [{ id, position, importance, ... }],  // 3D 렌더링용 실제 데이터
+//    edges: [{ source, target, type }]
+// }]
 
 // 액션
 completeProject(projectId, constellationName)  // POST /projects/:id/complete
-fetchCompletedImages()                          // GET /projects/completed-images
+fetchCompletedImages()                          // GET /projects/completed-images (노드/엣지 데이터 포함)
 ```
 
 ### 관련 파일
