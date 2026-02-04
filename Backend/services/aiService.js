@@ -10,9 +10,148 @@ const model = genAI.getGenerativeModel({
     model: "gemma-3-27b-it",
 });
 
+// User Request: Consolidate to ONLY gemma-3-27b-it + embeddings
+// We reuse the main model instance for verification to stick to the requested stack.
+const verificationModel = model;
+
 const embeddingModel = genAI.getGenerativeModel({
-    model: "text-embedding-004"
+    model: "gemini-embedding-001"
 });
+
+// Helper: Retry with Exponential Backoff for 503 Errors
+async function retryWithBackoff(fn, retries = 3, delay = 2000) {
+    try {
+        return await fn();
+    } catch (err) {
+        if (retries > 0 && (err.message.includes('503') || err.message.includes('overloaded'))) {
+            console.warn(`[AI Service] 503 Overloaded. Retrying in ${delay}ms... (${retries} left)`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return retryWithBackoff(fn, retries - 1, delay * 2);
+        }
+        throw err;
+    }
+}
+
+async function getEmbedding(text) {
+    try {
+        if (!text || typeof text !== 'string') return [];
+        // Use retry for embeddings too
+        const result = await retryWithBackoff(() => embeddingModel.embedContent(text));
+        return result.embedding.values;
+    } catch (error) {
+        console.error("Error generating embedding:", error);
+        return [];
+    }
+}
+
+/**
+ * Generate a response using Google Gemini (with Retries)
+ */
+/**
+ * Generate a response using Google Gemini (with Retries & Prompt Engineering)
+ */
+async function generateResponse(prompt, context = "", settings = {}) {
+    try {
+        if (!apiKey) return { answer: "API Key Missing", summary: "Error", keywords: [], importance: 1 };
+
+        // Prompt modified to include short summaries for UI display
+        const fullPrompt = `
+      You are Sidera, a wise and helpful AI assistant.
+      While you appreciate astronomical metaphors and a calm, starry tone, **you must answer ALL user questions** regardless of the topic (e.g., food, music, daily life, coding).
+      Do NOT refuse to answer non-astronomical questions. Be knowledgeable and witty.
+
+      [Context] ${context || "None"}
+
+      Task:
+      1. Analyze user input and provide a helpful response in **Korean** (key: "answer").
+      2. **English Topic (Vector Key)**: Extract core entities and categories as a comma-separated list. 
+         - Format: "Entity1, Entity2, Category"
+         - Rule: NO sentences. NO verbs. NO "User asked about".
+         - Example: "Day6, JYP Entertainment, K-pop Band" (Good)
+         - Example: "SQL, Database, Query Language" (Good)
+         - Example: "Food recommendations, KAIST area, Bakery" (Good for local query)
+      3. **Short Title (UI)**: A very short Korean title (max 10 chars) for the sidebar/star label. (key: "shortTitle")
+      4. **Summary (Memory)**: Summarize the KEY FACTS from your answer in one Korean sentence.
+         - Rule: Do NOT start with "User asked..." or "The user wants...". Just state the fact.
+         - Example: "Day6는 JYP 소속의 4인조 밴드이다."
+      5. **Importance**: Rate the semantic depth/importance (0.0 to 1.0) and Star Count (1-5).
+         - Note: The first message in a project is always the Anchor (1.0/5★), but please evaluate this normally as well.
+
+      User Input: "${prompt}"
+      
+      Respond STRICTLY in JSON:
+      {
+        "answer": "...",
+        "englishTopic": "Entity1, Entity2, Category", 
+        "shortTitle": "...",
+        "summary": "...",
+        "importanceScore": 0.0-1.0,
+        "importance": 1-5
+      }
+    `;
+
+        const generationConfig = {
+            temperature: settings.temperature || 0.7,
+            maxOutputTokens: settings.maxTokens || 1000,
+        };
+
+        const result = await retryWithBackoff(() => model.generateContent({
+            contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
+            generationConfig
+        }));
+        const response = await result.response;
+        const text = response.text();
+
+        let parsed;
+        try {
+            // Robust check for JSON block
+            const jsonBlock = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/\{[\s\S]*\}/);
+            const rawJson = jsonBlock ? jsonBlock[1] || jsonBlock[0] : text;
+            parsed = JSON.parse(rawJson);
+        } catch (e) {
+            console.error("JSON Parsing Failed, using fallback. Raw text:", text);
+            parsed = {
+                answer: text.replace(/```json[\s\S]*```/g, '').substring(0, 500),
+                summary: "Interaction",
+                topicSummary: "Topic",
+                shortTitle: "New Chat",
+                keywords: [],
+                starLabel: "Star"
+            };
+        }
+
+        // --- STRICT SANITIZATION ---
+        if (typeof parsed.topicSummary !== 'string') parsed.topicSummary = "Topic";
+        if (parsed.topicSummary.length > 40) parsed.topicSummary = parsed.topicSummary.substring(0, 40);
+
+        if (typeof parsed.shortTitle !== 'string') parsed.shortTitle = "Chat";
+        if (parsed.shortTitle.length > 20) parsed.shortTitle = parsed.shortTitle.substring(0, 20);
+
+        if (typeof parsed.starLabel !== 'string') parsed.starLabel = "Star";
+        if (parsed.starLabel.length > 20) parsed.starLabel = parsed.starLabel.substring(0, 20);
+
+        if (!Array.isArray(parsed.keywords)) parsed.keywords = [];
+        parsed.keywords = parsed.keywords.slice(0, 5).map(k => String(k).substring(0, 15));
+
+        // Ensure numeric importance
+        let rawScore = parseFloat(parsed.importanceScore);
+        if (isNaN(rawScore)) rawScore = 0.5;
+        parsed.importanceScore = rawScore;
+        const SideraConfig = require('./aiService').SideraConfig || { IS: { percentiles: { p5: 0.9, p4: 0.8, p3: 0.5, p2: 0.2 } } };
+        // Simple star calc directly if config issues
+        if (rawScore >= 0.9) parsed.importance = 5;
+        else if (rawScore >= 0.8) parsed.importance = 4;
+        else if (rawScore >= 0.5) parsed.importance = 3;
+        else if (rawScore >= 0.2) parsed.importance = 2;
+        else parsed.importance = 1;
+
+        return parsed;
+
+    } catch (error) {
+        console.error("Error generating response:", error);
+        return { answer: "Error: Service Unavailable or Overloaded.", summary: "Error", keywords: [], importance: 1 };
+    }
+}
 
 // --- SIDERA CONFIGURATION ---
 const SideraConfig = {
@@ -26,12 +165,12 @@ const SideraConfig = {
     Connect: { // Edge Generation
         explicit: {
             window: 15,
-            threshold: 0.55, // Lowered from 0.70 for more explicit connections
+            threshold: 0.829, // Lowered from 0.88 to capture "Singer" <-> "TV Show" (Score ~0.83)
             limit: 2 // Top-2 matches
         },
         implicit: {
             window: 50,
-            threshold: 0.35, // Lowered from 0.45 for more implicit connections
+            threshold: 0.78, // Raised from 0.65
             limit: 3, // Top-3
             decayLambda: 50 // Time decay constant
         }
@@ -41,6 +180,7 @@ const SideraConfig = {
 // --- HELPER METRICS (Heuristics) ---
 function calculateImportanceMetrics(text, role) {
     if (!text) return 0;
+    // ...
 
     // (A) Info Score: Facts, Numbers, Proper Nouns, Length
     const numberCount = (text.match(/\d+/g) || []).length;
@@ -162,95 +302,110 @@ async function getEmbedding(text) {
     }
 }
 
-async function generateResponse(prompt, context = "", settings = {}) {
+// NEW: Translate and Embed (Fix for Korean Vector Collapse)
+async function getEnglishEmbedding(text) {
+    if (!apiKey || !text) return null;
     try {
-        if (!apiKey) return { answer: "API Key Missing", summary: "Error", keywords: [], importance: 1 };
-
-        // Prompt modified to include short summaries for UI display
-        const fullPrompt = `
-      You are Sidera, a wise astronomical guide.
-      [Context] ${context || "None"}
-
-      Task:
-      1. Analyze user input and provide a helpful response in **Korean**.
-      2. Extract 1-3 short noun keywords (Korean).
-      3. Summarize the interaction in one Korean sentence.
-      4. Create a very short title (max 10 Korean characters) for sidebar display.
-      5. Create a star label (max 15 Korean characters, preferably 2 words) for constellation view.
-
-      User Input: "${prompt}"
-      
-      Respond STRICTLY in JSON:
-      {
-        "answer": "Response...",
-        "summary": "Full summary sentence...",
-        "keywords": ["kw1", "kw2"],
-        "topicSummary": "핵심 주제 (명사형, 5단어 이내, 예: '블랙홀의 구조', '제육볶음 레시피')",
-        "shortTitle": "제목(10자)",
-        "starLabel": "별 라벨"
-      }
-    `;
-
-        const generationConfig = {
-            temperature: settings.temperature || 0.7,
-            maxOutputTokens: settings.maxTokens || 1000,
-        };
-
-        const result = await model.generateContent({
-            contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
-            generationConfig
+        // 1. Translate
+        // Use a separate prompt just for translation to avoid context pollution
+        const translationResult = await model.generateContent({
+            contents: [{ role: "user", parts: [{ text: `Translate the following Korean text to English for technical classification. Return ONLY the English text, no explanations.\n\nText: "${text}"` }] }]
         });
-        const response = await result.response;
-        const text = response.text();
+        const englishText = translationResult.response.text().trim();
+        console.log(`[Translation] "${text.substring(0, 15)}..." -> "${englishText.substring(0, 30)}..."`);
 
-        let parsed;
-        try {
-            // Robust check for JSON block
-            const jsonBlock = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/\{[\s\S]*\}/);
-            const rawJson = jsonBlock ? jsonBlock[1] || jsonBlock[0] : text;
-            parsed = JSON.parse(rawJson);
-        } catch (e) {
-            console.error("JSON Parsing Failed, using fallback. Raw text:", text);
-            parsed = {
-                answer: text.replace(/```json[\s\S]*```/g, '').substring(0, 500),
-                summary: "Interaction",
-                topicSummary: "Topic",
-                shortTitle: "New Chat",
-                keywords: [],
-                starLabel: "Star"
-            };
-        }
-
-        // --- STRICT SANITIZATION ---
-        // Force valid types and lengths
-        if (typeof parsed.topicSummary !== 'string') parsed.topicSummary = "Topic";
-        if (parsed.topicSummary.length > 40) parsed.topicSummary = parsed.topicSummary.substring(0, 40);
-
-        if (typeof parsed.shortTitle !== 'string') parsed.shortTitle = "Chat";
-        if (parsed.shortTitle.length > 20) parsed.shortTitle = parsed.shortTitle.substring(0, 20);
-
-        if (typeof parsed.starLabel !== 'string') parsed.starLabel = "Star";
-        if (parsed.starLabel.length > 20) parsed.starLabel = parsed.starLabel.substring(0, 20);
-
-        if (!Array.isArray(parsed.keywords)) parsed.keywords = [];
-        parsed.keywords = parsed.keywords.slice(0, 5).map(k => String(k).substring(0, 15));
-
-        // --- SIDERA-IS LOGIC APPLICATION ---
-        // Calculate raw score (0-1)
-        const rawScore = calculateImportanceMetrics((parsed.answer || "") + " " + prompt, "assistant");
-
-        // Note: The caller (chat.js) must call calculateStarRating with history
-        // Here we just return the RAW score and a provisional rating (absolute)
-        parsed.importanceScore = rawScore;
-        parsed.importance = calculateStarRating(rawScore, []); // Provisional
-
-        return parsed;
-
+        // 2. Embed
+        return await getEmbedding(englishText);
     } catch (error) {
-        console.error("AI Generation Error:", error);
-        return { answer: "Error", summary: "Error", keywords: [], importance: 1, importanceScore: 0 };
+        console.error("[English Embedding Error]", error);
+        return null; // Fallback
     }
 }
+
+
+
+async function generateTitle(text) {
+    // ...
+}
+
+// NEW: Translate and Embed (Fix for Korean Vector Collapse)
+async function getEnglishEmbedding(text) {
+    if (!apiKey || !text) return null;
+    try {
+        // 1. Translate
+        const translationResult = await retryWithBackoff(() => verificationModel.generateContent({
+            contents: [{ role: "user", parts: [{ text: `Translate the following Korean text to English for technical classification. Return ONLY the English text.\n\nText: "${text}"` }] }]
+        }));
+        const englishText = translationResult.response.text().trim();
+        console.log(`[Translation] "${text.substring(0, 15)}..." -> "${englishText.substring(0, 30)}..."`);
+
+        // 2. Embed
+        return await getEmbedding(englishText);
+    } catch (error) {
+        console.error("[English Embedding Error]", error);
+        return null; // Fallback or handle error
+    }
+}
+
+// NEW: Verify Relevance with LLM (Gatekeeper)
+async function checkTopicRelevance(newTopic, candidates) {
+    // candidates: [{ id: '...', topic: '...' }]
+    if (!candidates || candidates.length === 0) return {};
+
+    const candidateList = candidates.map((c, i) => `${i + 1}. ${c.topic} (ID: ${c.id})`).join('\n');
+    const prompt = `
+    Analyze the semantic relationship between the Main Topic and the Candidate Topics.
+    Determine if they are conceptually related (True) or unrelated (False).
+    
+    Main Topic: "${newTopic}"
+    
+    Candidates:
+    ${candidateList}
+    
+    Rules:
+    - Return "true" only if they share a specific context (e.g., Singer & Song, University & Food nearby, Tech & Tech).
+    - Return "false" if they are only vaguely related or completely different (e.g., Band vs SQL, Food vs Database).
+    - Be strict. False positives are worse than false negatives.
+    
+    Respond STRICTLY in JSON format:
+    {
+        "results": [
+            { "id": "candidate_id", "related": true, "reason": "Reason..." },
+            ...
+        ]
+    }
+    `;
+
+    try {
+        const result = await retryWithBackoff(() => verificationModel.generateContent({
+            contents: [{ role: "user", parts: [{ text: prompt }] }]
+            // generationConfig: { responseMimeType: "application/json" } // REMOVED: Incompatible with some models
+        }));
+
+        let text = result.response.text();
+        // Manual cleanup for JSON markdown
+        text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+
+        const json = JSON.parse(text);
+
+        // Convert to Map for easy lookup
+        const lookup = {};
+        if (json.results && Array.isArray(json.results)) {
+            json.results.forEach(r => {
+                lookup[r.id] = r;
+            });
+        }
+        return lookup;
+    } catch (e) {
+        console.error("[Relevance Check Error]", e);
+        return {}; // Return empty means no verification (or fail safe open? maybe fail safe closed currently)
+    }
+}
+
+
+
+
+
 
 async function generateTitle(text) {
     // ... existing logic ...
@@ -267,5 +422,7 @@ module.exports = {
     generateTitle,
     SideraConfig,
     calculateImportanceMetrics,
-    calculateStarRating
+    calculateStarRating,
+    getEnglishEmbedding,
+    checkTopicRelevance // Exported
 };

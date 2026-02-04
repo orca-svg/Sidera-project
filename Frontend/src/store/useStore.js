@@ -191,6 +191,30 @@ export const useStore = create((set, get) => ({
     }
   },
 
+  // 3.5. Refresh Data (Silent Update for Background Edges)
+  refreshProjectData: async () => {
+    const { activeProjectId, user } = get();
+    if (!activeProjectId || user?.isGuest) return;
+
+    try {
+      console.log("[Store] Refreshing edges...");
+      const edgesRes = await client.get(`/edges/${activeProjectId}`);
+      const fetchedEdges = Array.isArray(edgesRes.data) ? edgesRes.data : [];
+
+      const mappedEdges = fetchedEdges.map(e => ({
+        id: e._id,
+        source: e.source,
+        target: e.target,
+        type: e.type
+      }));
+
+      set({ edges: mappedEdges });
+      console.log(`[Store] Refreshed ${mappedEdges.length} edges.`);
+    } catch (err) {
+      console.error("[Store] refreshProjectData Error:", err);
+    }
+  },
+
   // 4. Send Message & Instant Title Update
   addNode: async (content) => {
     const { activeProjectId, nodes, activeNode, user } = get();

@@ -262,8 +262,8 @@ router.post('/', async (req, res) => {
         // --- NORMAL MODE (DB PERSISTENCE) ---
         console.log(`[Chat Request] Message: "${message}" | Settings:`, settings);
 
-        // A. Generate Embedding for User Question
-        const questionEmbedding = await aiService.getEmbedding(message);
+        // A. Generate Embedding for User Question (English Translation)
+        const questionEmbedding = await aiService.getEnglishEmbedding(message);
 
         // B. Hierarchical Retrieval (RAG)
         let relevantContext = "";
@@ -273,18 +273,31 @@ router.post('/', async (req, res) => {
         if (questionEmbedding) {
             // Fetch all nodes with embeddings from this project
             const allNodes = await Node.find({ projectId }).select('summary summaryEmbedding fullEmbedding question answer');
+            console.log(`[RAG-DEBUG] Found ${allNodes.length} nodes in DB for Project ${projectId}`);
 
             // Level 1: Filter by Topic (Summary)
             const topicCandidates = allNodes
-                .map(n => ({
-                    node: n,
-                    score: cosineSimilarity(questionEmbedding, n.summaryEmbedding)
-                }))
-                .filter(item => item.score > 0.4) // Filter unrelated topics
+                .map(n => {
+                    const sim = cosineSimilarity(questionEmbedding, n.summaryEmbedding);
+                    // Check if embedding exists
+                    if (!n.summaryEmbedding || n.summaryEmbedding.length === 0) {
+                        console.log(`[RAG-DEBUG] Node "${n.summary.substring(0, 10)}..." has NO embedding.`);
+                        return { node: n, score: 0 };
+                    }
+                    return { node: n, score: sim };
+                })
+                // LOGGING FOR USER
+                .map(item => {
+                    // LOG ALL SCORES regardless of value
+                    console.log(`[RAG-SIM] Score: ${item.score.toFixed(4)} | Summary: "${item.node.summary.substring(0, 30)}..."`);
+                    return item;
+                })
+                .filter(item => item.score > 0.5) // Filter unrelated topics (Increased from 0.4)
                 .sort((a, b) => b.score - a.score)
                 .slice(0, 5); // Take top 5 topics
 
             if (topicCandidates.length > 0) {
+                // ... (Level 2 logic) ...
                 // Level 2: Pinpoint Detail (Full Content)
                 // Re-calculate against full embedding for these candidates
                 const detailMatches = topicCandidates.map(c => ({
@@ -295,7 +308,7 @@ router.post('/', async (req, res) => {
                 bestMatchScore = detailMatches[0].score;
 
                 if (bestMatchScore > 0.6) {
-                    console.log(`[RAG] Found core memory: "${bestMatchNode.summary}" (Score: ${bestMatchScore.toFixed(2)})`);
+                    console.log(`[RAG-MATCH] Found core memory: "${bestMatchNode.summary}" (Score: ${bestMatchScore.toFixed(2)})`);
                     relevantContext = `User previously asked: "${bestMatchNode.question}"\nAI Answered: "${bestMatchNode.answer}"\nSummary: ${bestMatchNode.summary}`;
                 }
             }
@@ -313,29 +326,41 @@ router.post('/', async (req, res) => {
 
         const aiResponse = await aiService.generateResponse(message, finalContext, settings);
 
+        // Log the Full Response for Debugging
+        console.log("\n--- [AI RESPONSE DEBUG] ---");
+        console.log(JSON.stringify(aiResponse, null, 2));
+        console.log("---------------------------\n");
+
         // D. Create New Node Instance (Initial)
-        // STRICT SANITIZATION for topicSummary to prevent layout breaks
-        let cleanTopicSummary = aiResponse.topicSummary;
-        if (!cleanTopicSummary || cleanTopicSummary.length > 30) cleanTopicSummary = aiResponse.shortTitle;
-        if (!cleanTopicSummary || cleanTopicSummary.length > 30) cleanTopicSummary = (aiResponse.keywords && aiResponse.keywords[0]) || "Topic";
-        if (cleanTopicSummary && cleanTopicSummary.length > 30) cleanTopicSummary = cleanTopicSummary.substring(0, 30) + "..";
+        // D. Create New Node Instance (Initial)
+        // Use shortTitle as the primary label
+        let cleanShortTitle = aiResponse.shortTitle || "Topic";
 
         const newNode = new Node({
             projectId,
             question: message,
             answer: aiResponse.answer,
-            keywords: aiResponse.keywords,
-            importance: 3, // Temporary, will be updated by Sidera-IS
+            keywords: [], // Removed from AI, empty array
+            importance: 3, // Provisional
             importanceScore: 0,
             summary: aiResponse.summary,
-            topicSummary: cleanTopicSummary,
-            shortTitle: aiResponse.shortTitle || (aiResponse.keywords && aiResponse.keywords[0]) || "",
-            starLabel: aiResponse.starLabel || aiResponse.shortTitle || ""
+            topicSummary: cleanShortTitle, // Map shortTitle to topicSummary for compatibility
+            shortTitle: cleanShortTitle,
+            starLabel: cleanShortTitle // Map shortTitle to starLabel
         });
 
-        // Generate Embeddings for the new node
-        newNode.summaryEmbedding = await aiService.getEmbedding(newNode.summary);
-        newNode.fullEmbedding = await aiService.getEmbedding(newNode.question + " " + newNode.answer);
+        // Generate Embeddings for the new node (Using English Topic)
+        // 1. Summary Embedding: Use the AI-provided English Topic if available
+        if (aiResponse.englishTopic && aiResponse.englishTopic !== "Topic") {
+            console.log(`[Embedding] Using AI-generated English Topic: "${aiResponse.englishTopic}"`);
+            newNode.summaryEmbedding = await aiService.getEmbedding(aiResponse.englishTopic);
+        } else {
+            console.log(`[Embedding] English Topic missing, translating summary...`);
+            newNode.summaryEmbedding = await aiService.getEnglishEmbedding(newNode.summary);
+        }
+
+        // 2. Full Embedding: Use translation of Q+A
+        newNode.fullEmbedding = await aiService.getEnglishEmbedding(newNode.question + " " + newNode.answer);
 
         // --- SIDERA-IS v2.1: Weighted Anchor Logic ---
         let finalImportanceScore = aiResponse.importanceScore; // Default to provisional
@@ -350,9 +375,9 @@ router.post('/', async (req, res) => {
             answerText.length < 10; // Very short answers likely errors
 
         if (isError) {
-            // Error case: No stars
+            // Error case: Minimum stars
             finalImportanceScore = 0;
-            newNode.importance = 0;
+            newNode.importance = 1; // FIX: Minimum allowed value is 1
             newNode.importanceScore = 0;
             console.log("[Sidera-IS] Error/Failed response detected - No stars");
         } else if (!rootNode && count === 0) {
@@ -400,165 +425,197 @@ router.post('/', async (req, res) => {
 
         const savedNode = await newNode.save();
 
-        // E. Sidera-Connect: Hybrid Tree + Cluster Logic
-
-        // 1. Branch Edge (Tree Structure)
-        // Connect to parentId if provided, otherwise to the last node (linear default)
-        const parentId = req.body.parentId || (actualLastNode ? actualLastNode._id : null);
-
-        // Auto-update project title from first conversation's topicSummary (Logic from Remote)
-        if (!rootNode) {
-            // This is the first node - update project title
-            const Project = require('../models/Project');
-            const currentProject = await Project.findById(projectId);
-
-            // Only overwrite if it's a default title
-            const currentName = currentProject.name || currentProject.title; // Safe fallback
-            const isDefaultTitle = !currentName ||
-                currentName === 'New Project' ||
-                currentName === '새 프로젝트' ||
-                currentName === 'New Conversation'; // Match frontend default
-
-            if (isDefaultTitle) {
-                // Determine best title with strict length limit (max 30 chars)
-                // Match DEV branch: Prioritize "Title" (shortTitle) over "Topic Summary"
-                let title = aiResponse.shortTitle;
-
-                // If shortTitle is missing, try topicSummary
-                if (!title || title.length > 30) {
-                    title = aiResponse.topicSummary;
-                }
-
-                // If still too long or missing, try keywords or fallback to question
-                if (!title || title.length > 30) {
-                    title = (aiResponse.keywords && aiResponse.keywords[0]) || newNode.question?.substring(0, 20);
-                }
-
-                // Final safety truncation
-                if (title && title.length > 30) {
-                    title = title.substring(0, 30) + "...";
-                }
-
-                if (title) {
-                    await Project.findByIdAndUpdate(projectId, { name: title, lastUpdated: new Date() });
-                    projectTitle = title; // Capture for response
-                    console.log(`[Project] Auto-updated name to: ${title}`);
-                }
-            } else {
-                console.log(`[Project] Title is user-customized ('${currentProject.title}'), skipping auto-update.`);
-            }
-        }
-
-        const newEdges = [];
-        const { SideraConfig } = aiService;
-
-        if (parentId) {
-            const branchEdge = new Edge({
-                projectId,
-                source: parentId,
-                target: savedNode._id,
-                type: 'branch'
-            });
-            await branchEdge.save();
-            newEdges.push(branchEdge);
-
-            // Also update the node's parentId if it wasn't set explicitly in the model creation above
-            savedNode.parentId = parentId;
-            await savedNode.save();
-        }
-
-        // 2. Determine Candidates & Scores (Sidera-Connect Advanced Logic)
-        if (newNode.summaryEmbedding && newNode.summaryEmbedding.length > 0) {
-            const history = await Node.find({ projectId, _id: { $ne: savedNode._id } })
-                .sort({ createdAt: -1 })
-                .limit(50)
-                .select('summaryEmbedding question answer date importanceScore topicSummary');
-
-            // Calculate Scores for ALL candidates
-            const scoredCandidates = history.map((cand, index) => {
-                const sim = cosineSimilarity(newNode.summaryEmbedding, cand.summaryEmbedding);
-
-                // DEBUG LOG: Check why score is high
-                if (sim > 0.5) {
-                    console.log(`[Similarity Check] New: "${newNode.topicSummary}" vs Cand: "${cand.topicSummary || 'Unknown'}" (ID: ${cand._id})`);
-                    console.log(`[Similarity Check] Score: ${sim.toFixed(4)}`);
-                }
-
-                const timeDiff = Math.abs(index); // Just use index as proxy for 'turn distance'
-
-                // (A) Reply Score (Short-term focus)
-                const isRecent = timeDiff <= SideraConfig.Connect.explicit.window; // 15 turns
-                const replyDecay = Math.exp(-timeDiff / 20);
-                let replyScore = sim * replyDecay;
-
-                // (B) Topic Score (Long-term context)
-                const topicDecay = Math.exp(-timeDiff / SideraConfig.Connect.implicit.decayLambda);
-                let topicScore = sim * topicDecay;
-
-                return { node: cand, replyScore, topicScore, index };
-            });
-
-            // 3. Select EXPLICIT Edge - Based on HIGH semantic similarity (docs: 0.75+)
-            // If semantic similarity is high, the topics are strongly related (e.g., 블랙홀 ↔ 화이트홀 = 우주)
-            const SEMANTIC_EXPLICIT_THRESHOLD = 0.75; // Raised to 0.75 to prevent unrelated connections
-
-            const explicitCandidates = scoredCandidates
-                .filter(c => {
-                    const rawSim = cosineSimilarity(newNode.summaryEmbedding, c.node.summaryEmbedding);
-                    return rawSim >= SEMANTIC_EXPLICIT_THRESHOLD; // High semantic similarity = explicit edge
-                })
-                .sort((a, b) => b.topicScore - a.topicScore) // Sort by topicScore for best matches
-                .slice(0, SideraConfig.Connect.explicit.limit); // Top-2 matches
-
-            for (const cand of explicitCandidates) {
-                const candId = cand.node._id.toString();
-                const isLastNode = actualLastNode && (candId === actualLastNode._id.toString());
-                const rawSim = cosineSimilarity(newNode.summaryEmbedding, cand.node.summaryEmbedding);
-
-                if (isLastNode) {
-                    // Upgrade Temporal(Branch) Edge
-                    const tEdge = newEdges.find(e => e.type === 'branch');
-                    if (tEdge) {
-                        tEdge.type = 'explicit';
-                        await tEdge.save();
-                        console.log(`[Connect] Upgraded Branch -> Explicit (Similarity: ${rawSim.toFixed(3)})`);
-                    }
-                } else {
-                    const edge = new Edge({ projectId, source: candId, target: savedNode._id, type: 'explicit' });
-                    await edge.save();
-                    newEdges.push(edge);
-                    console.log(`[Connect] New Explicit Edge (Similarity: ${rawSim.toFixed(3)})`);
-                }
-            }
-
-            // 4. Select IMPLICIT Edges - Lower semantic similarity but still related
-            const connectedIds = newEdges.map(e => e.source.toString()); // temporal/explicit sources
-            const SEMANTIC_IMPLICIT_THRESHOLD = 0.35;
-
-            const implicitCandidates = scoredCandidates
-                .filter(c => !connectedIds.includes(c.node._id.toString())) // Don't duplicate
-                .filter(c => {
-                    const rawSim = cosineSimilarity(newNode.summaryEmbedding, c.node.summaryEmbedding);
-                    return rawSim >= SEMANTIC_IMPLICIT_THRESHOLD && rawSim < SEMANTIC_EXPLICIT_THRESHOLD;
-                })
-                .sort((a, b) => b.topicScore - a.topicScore)
-                .slice(0, SideraConfig.Connect.implicit.limit); // Top-3
-
-            for (const cand of implicitCandidates) {
-                const rawSim = cosineSimilarity(newNode.summaryEmbedding, cand.node.summaryEmbedding);
-                const edge = new Edge({ projectId, source: cand.node._id, target: savedNode._id, type: 'implicit' });
-                await edge.save();
-                newEdges.push(edge);
-                console.log(`[Connect] New Implicit Edge (Similarity: ${rawSim.toFixed(3)})`);
-            }
-        }
-
-        // Return Data
+        // --- 1. IMMEDIATE RESPONSE (User Experience First) ---
+        // Return the node immediately so the user sees the answer/star.
+        // Edges will be calculated in background and appear on next refresh/poll.
         res.status(201).json({
             node: savedNode,
-            edges: newEdges,
+            edges: [], // Edges not ready yet
             projectTitle // Return the new title if generated
         });
+
+        // --- 2. BACKGROUND PROCESS: CONNECT (Fire and Forget) ---
+        (async () => {
+            try {
+                // Auto-update project title from first conversation's topicSummary (Logic from Remote)
+                if (!rootNode) {
+                    // This is the first node - update project title
+                    const Project = require('../models/Project');
+                    const currentProject = await Project.findById(projectId);
+
+                    // Only overwrite if it's a default title
+                    const currentName = currentProject.name || currentProject.title; // Safe fallback
+                    const isDefaultTitle = !currentName ||
+                        currentName === 'New Project' ||
+                        currentName === '새 프로젝트' ||
+                        currentName === 'New Conversation'; // Match frontend default
+
+                    if (isDefaultTitle) {
+                        // Determine best title (max 30 chars)
+                        // Use shortTitle directly as it is now the primary label
+                        let title = aiResponse.shortTitle;
+
+                        if (!title || title.length > 30) {
+                            title = newNode.question?.substring(0, 20);
+                        }
+
+                        // Final safety truncation
+                        if (title && title.length > 30) {
+                            title = title.substring(0, 30) + "...";
+                        }
+
+                        if (title) {
+                            await Project.findByIdAndUpdate(projectId, { name: title, lastUpdated: new Date() });
+                            // projectTitle = title; // No need to capture for response, already sent
+                            console.log(`[Project] Auto-updated name to: ${title}`);
+                        }
+                    } else {
+                        console.log(`[Project] Title is user-customized ('${currentProject.title}'), skipping auto-update.`);
+                    }
+                } // End of if (!rootNode)
+
+                // E. Sidera-Connect: Hybrid Tree + Cluster Logic
+
+                // 1. Branch Edge (Tree Structure) - Still fast, could do here
+                // Connect to parentId ONLY if provided (User explicitly replied)
+                const parentId = req.body.parentId || null;
+                const newEdges = []; // This will store edges created in background, not returned to client
+                const { SideraConfig } = aiService;
+
+                if (parentId) {
+                    const branchEdge = new Edge({
+                        projectId,
+                        source: parentId,
+                        target: savedNode._id,
+                        type: 'branch'
+                    });
+                    await branchEdge.save();
+                    newEdges.push(branchEdge); // Save to DB
+
+                    // Also update the node's parentId
+                    savedNode.parentId = parentId;
+                    await savedNode.save();
+                }
+
+                // 2. Determine Candidates & Scores
+                if (newNode.summaryEmbedding && newNode.summaryEmbedding.length > 0) {
+                    const history = await Node.find({ projectId, _id: { $ne: savedNode._id } })
+                        .sort({ createdAt: -1 })
+                        .limit(50)
+                        .select('summaryEmbedding question answer date importanceScore topicSummary');
+
+                    // Calculate Scores for ALL candidates
+                    const scoredCandidates = history.map((cand, index) => {
+                        const sim = cosineSimilarity(newNode.summaryEmbedding, cand.summaryEmbedding);
+                        const timeDiff = Math.abs(index);
+
+                        // (A) Reply Score
+                        const isRecent = timeDiff <= SideraConfig.Connect.explicit.window;
+                        const replyDecay = Math.exp(-timeDiff / 20);
+                        let replyScore = sim * replyDecay;
+
+                        // (B) Topic Score
+                        const topicDecay = Math.exp(-timeDiff / SideraConfig.Connect.implicit.decayLambda);
+                        let topicScore = sim * topicDecay;
+
+                        return { node: cand, replyScore, topicScore, index };
+                    });
+
+                    // 3. AI Verification Step
+                    // Strategy: Widen the net (Score > 0.60, Top 15)
+                    const potentialMatches = scoredCandidates
+                        .filter(c => c.replyScore > 0.60)
+                        .slice(0, 15);
+
+                    let verifiedIds = new Set();
+
+                    if (potentialMatches.length > 0) {
+                        const candidatesForAI = potentialMatches.map(c => ({
+                            id: c.node._id.toString(),
+                            topic: c.node.topicSummary || c.node.summary
+                        }));
+
+                        console.log(`[Background] Verifying ${potentialMatches.length} candidates for "${newNode.topicSummary}"...`);
+                        const verificationResults = await aiService.checkTopicRelevance(newNode.topicSummary, candidatesForAI);
+
+                        potentialMatches.forEach(c => {
+                            const id = c.node._id.toString();
+                            const res = verificationResults[id];
+                            if (res && res.related) {
+                                verifiedIds.add(id);
+                                console.log(`  [Verified] MATCH: "${c.node.topicSummary}" (Reason: ${res.reason})`);
+                            } else {
+                                // console.log(`  [Verified] REJECT: "${c.node.topicSummary}"`);
+                            }
+                        });
+                    }
+
+                    // 4. Select EXPLICIT Edges (> 0.82)
+                    const SEMANTIC_EXPLICIT_THRESHOLD = 0.82;
+
+                    const explicitCandidates = scoredCandidates
+                        .filter(c => verifiedIds.has(c.node._id.toString())) // Verified Only
+                        .filter(c => cosineSimilarity(newNode.summaryEmbedding, c.node.summaryEmbedding) >= SEMANTIC_EXPLICIT_THRESHOLD)
+                        .sort((a, b) => b.topicScore - a.topicScore)
+                        .slice(0, SideraConfig.Connect.explicit.limit);
+
+                    for (let i = 0; i < explicitCandidates.length; i++) {
+                        const cand = explicitCandidates[i];
+                        const candId = cand.node._id.toString();
+                        const rawSim = cosineSimilarity(newNode.summaryEmbedding, cand.node.summaryEmbedding);
+
+                        // Check existing
+                        const existingEdge = await Edge.findOne({ source: candId, target: savedNode._id });
+
+                        if (existingEdge) {
+                            existingEdge.type = 'explicit';
+                            await existingEdge.save();
+                            console.log(`[Connect] Upgraded Edge -> Explicit (${rawSim.toFixed(3)})`);
+                        } else {
+                            const edge = new Edge({ projectId, source: candId, target: savedNode._id, type: 'explicit' });
+                            await edge.save();
+                            console.log(`[Connect] New Explicit Edge (${rawSim.toFixed(3)})`);
+                        }
+
+                        if (i === 0 && !savedNode.parentId) {
+                            savedNode.parentId = candId;
+                            await savedNode.save();
+                        }
+                    }
+
+                    // 5. Select IMPLICIT Edges (< 0.82)
+                    // Logic Update: Any Verified connection below 0.82 is Implicit (Floor is effectively 0.60 from pre-filter)
+
+                    const explicitIds = explicitCandidates.map(c => c.node._id.toString());
+
+                    const implicitCandidates = scoredCandidates
+                        .filter(c => !explicitIds.includes(c.node._id.toString())) // Not already explicit
+                        .filter(c => verifiedIds.has(c.node._id.toString())) // Verified Only
+                        .filter(c => {
+                            const rawSim = cosineSimilarity(newNode.summaryEmbedding, c.node.summaryEmbedding);
+                            return rawSim < SEMANTIC_EXPLICIT_THRESHOLD; // Only upper bound check
+                        })
+                        .sort((a, b) => b.topicScore - a.topicScore)
+                        .slice(0, SideraConfig.Connect.implicit.limit);
+
+                    for (const cand of implicitCandidates) {
+                        const rawSim = cosineSimilarity(newNode.summaryEmbedding, cand.node.summaryEmbedding);
+
+                        // Check existing to avoid dups
+                        const existing = await Edge.findOne({ source: cand.node._id, target: savedNode._id });
+                        if (!existing) {
+                            const edge = new Edge({ projectId, source: cand.node._id, target: savedNode._id, type: 'implicit' });
+                            await edge.save();
+                            console.log(`[Connect] New Implicit Edge (${rawSim.toFixed(3)})`);
+                        }
+                    }
+                }
+                console.log("[Background] Connection processing complete.");
+
+            } catch (bgError) {
+                console.error("[Background Error]", bgError);
+            }
+        })(); // End Background IIFE
 
     } catch (err) {
         console.error("Chat Error:", err.message, err.stack);

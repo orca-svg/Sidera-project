@@ -5,7 +5,7 @@ import { List, ChevronRight, ChevronLeft, Target, Telescope } from 'lucide-react
 import clsx from 'clsx';
 
 export function TopicList() {
-  const { nodes, flyToNode, viewMode, setViewMode, projects, activeProjectId, setActiveNode } = useStore();
+  const { nodes, flyToNode, viewMode, setViewMode, projects, activeProjectId, setActiveNode, refreshProjectData } = useStore();
   const currentProject = projects.find(p => p.id === activeProjectId);
   const [isOpen, setIsOpen] = useState(true);
 
@@ -28,7 +28,10 @@ export function TopicList() {
       <div className="flex gap-2 mb-2 justify-end">
         {isOpen && (
           <button
-            onClick={() => setViewMode(viewMode === 'chat' ? 'constellation' : 'chat')}
+            onClick={() => {
+              if (viewMode === 'chat') refreshProjectData(); // Fetch latest edges
+              setViewMode(viewMode === 'chat' ? 'constellation' : 'chat');
+            }}
             className={clsx(
               "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all shadow-lg backdrop-blur-md",
               viewMode === 'constellation'
