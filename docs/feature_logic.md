@@ -296,3 +296,37 @@ fetchCompletedImages()                          // GET /projects/completed-image
 - 멀리 있을 때 너무 작아지지 않도록 최소 크기(0.7)를 보장합니다.
 - 공식: `scale = Math.max(0.7, Math.min(1.2, 30 / distance))`
 
+---
+
+## 10. 사진 공유 (Photo Share)
+
+별자리 화면을 캡처하고 공유하는 기능입니다.
+
+### 캡처 흐름
+```
+[카메라 버튼 클릭]
+      ↓
+[Canvas → Base64 PNG]
+      ↓
+[ShareModal 표시]
+      ↓
+[저장 / 공유 / 복사]
+```
+
+### 공유 옵션
+
+| 플랫폼 | 방법 | 설명 |
+|--------|------|------|
+| **모바일** | Web Share API | 기기 공유 시트 표시 (카카오톡, 인스타그램, 메시지 등) |
+| **데스크탑** | Clipboard API | 이미지 클립보드 복사 |
+| **공통** | Download | PNG 파일 다운로드 |
+
+### 기술 상세
+- **Web Share API**: `navigator.share({ files: [File] })`를 사용하여 이미지 파일 직접 공유
+- **Clipboard API**: `navigator.clipboard.write([ClipboardItem])` 사용
+- **지원 감지**: `navigator.canShare()` 메서드로 파일 공유 지원 여부 확인
+
+### 관련 파일
+- `Frontend/src/components/layout/ShareModal.jsx`: 공유 모달 컴포넌트
+- `Frontend/src/components/layout/MainLayout.jsx`: `handleCapture` 함수, 모달 상태 관리
+
