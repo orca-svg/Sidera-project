@@ -1,10 +1,10 @@
-import { useRef, useState, useMemo } from 'react'
+import { useRef, useState, useMemo, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Text, Sphere, MeshDistortMaterial, Html } from '@react-three/drei'
 import * as THREE from 'three'
 import clsx from 'clsx'
 
-// Reusing the improved BackgroundStar logic
+// Image Background Plane for Observatory View
 function Star({ position, importance }) {
   const size = 0.08 + (importance ?? 2) * 0.03
 
@@ -68,7 +68,32 @@ export function InteractiveConstellation({
   onClick
 }) {
   const groupRef = useRef()
-  const { nodes, edges, constellationName, projectId, title } = constellation
+  const { nodes, edges, constellationName, projectId, title, constellationImageUrl } = constellation
+
+  // Load mythical image texture for Observatory display
+  const [imageTexture, setImageTexture] = useState(null)
+  useEffect(() => {
+    if (!constellationImageUrl) {
+      setImageTexture(null)
+      return
+    }
+    const loader = new THREE.TextureLoader()
+    loader.load(constellationImageUrl, (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace
+      setImageTexture(tex)
+    })
+  }, [constellationImageUrl])
+
+  // Calculate constellation bounding box for image sizing
+  const imageSize = useMemo(() => {
+    if (!nodes || nodes.length === 0) return 15
+    const positions = nodes.map(n => n.position || [0, 0, 0])
+    const xs = positions.map(p => Array.isArray(p) ? p[0] : (p.x ?? 0))
+    const ys = positions.map(p => Array.isArray(p) ? p[1] : (p.y ?? 0))
+    const rangeX = Math.max(...xs) - Math.min(...xs)
+    const rangeY = Math.max(...ys) - Math.min(...ys)
+    return Math.max(rangeX, rangeY, 10) * 1.2 // 1.2x for margin
+  }, [nodes])
 
   // ... existing code below (line 73+)
 
@@ -164,6 +189,20 @@ export function InteractiveConstellation({
         <sphereGeometry args={[15, 16, 16]} />
         <meshBasicMaterial />
       </mesh>
+
+      {/* Mythical Image Background (if available) */}
+      {imageTexture && (
+        <mesh position={[0, 0, -2]}>
+          <planeGeometry args={[imageSize, imageSize]} />
+          <meshBasicMaterial
+            map={imageTexture}
+            transparent
+            opacity={0.25}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
 
       {/* Render Edges */}
       {edges.map((edge, i) => {

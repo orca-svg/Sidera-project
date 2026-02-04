@@ -64,6 +64,34 @@ Usually handled via passport-google-oauth20.
   }
   ```
 
+### Complete Project (Finish Constellation)
+- **URL**: `POST /api/projects/:id/complete`
+- **Auth**: Bearer Token
+- **Description**: Marks a project as completed, generates AI constellation image, and saves the constellation name.
+- **Body**:
+  ```json
+  {
+    "constellationName": "라디오",
+    "constellationImageSkeleton": "data:image/jpeg;base64,..." // Optional: Canvas capture
+  }
+  ```
+- **AI Pipeline**:
+  1. Gemini translates Korean name to English
+  2. SDXL generates object illustration
+  3. BRIA RMBG removes background → transparent PNG
+- **Response**:
+  ```json
+  {
+    "project": {
+      "_id": "...",
+      "status": "completed",
+      "constellationName": "라디오",
+      "constellationImageUrl": "data:image/png;base64,...",
+      "completedAt": "2025-02-05T..."
+    }
+  }
+  ```
+
 ---
 
 ## Chat (`/chat`)

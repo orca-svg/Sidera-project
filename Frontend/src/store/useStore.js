@@ -445,9 +445,12 @@ export const useStore = create((set, get) => ({
   setActiveNode: (id) => set({ activeNode: id }),
 
   // 9. Complete Project (End Conversation)
-  completeProject: async (projectId, constellationName) => {
+  completeProject: async (projectId, constellationName, constellationImageSkeleton) => {
     try {
-      const res = await client.post(`/projects/${projectId}/complete`, { constellationName });
+      const res = await client.post(`/projects/${projectId}/complete`, {
+        constellationName,
+        constellationImageSkeleton
+      });
       const { project, imageGenerated } = res.data;
 
       console.log('[Store] completeProject result:', { imageGenerated, imageUrl: project.constellationImageUrl?.substring(0, 50) + '...' });

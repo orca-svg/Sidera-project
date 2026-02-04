@@ -14,6 +14,111 @@ const model = genAI.getGenerativeModel({
 // We reuse the main model instance for verification to stick to the requested stack.
 const verificationModel = model;
 
+// --- HUGGING FACE INFERENCE API ---
+const HF_TOKEN = process.env.IMAGE_HUGGING_FACE_API || process.env.HUGGING_FACE_TOKEN;
+
+/**
+ * Generate a Mythical Constellation Image using Text-to-Image
+ * @param {string} _skeletonBase64 - Unused (kept for API compatibility)
+ * @param {string} topic - The constellation name/topic
+ * @returns {string|null} - The generated image as base64
+ */
+async function generateMythicalImage(_skeletonBase64, topic) {
+    if (!HF_TOKEN) {
+        console.warn("[AI] No HuggingFace Token found. Skipping image generation.");
+        return null;
+    }
+
+    try {
+        // Step 0: Translate Korean topic to English using Gemini
+        let englishTopic = topic;
+        try {
+            const translationResult = await model.generateContent(
+                `Translate the following constellation name to English. Only respond with the English translation, nothing else. If it's already English, just return it as is: "${topic}"`
+            );
+            englishTopic = translationResult.response.text().trim() || topic;
+            console.log(`[AI] Translated "${topic}" → "${englishTopic}"`);
+        } catch (transErr) {
+            console.warn(`[AI] Translation failed, using original: ${transErr.message}`);
+        }
+
+        console.log(`[AI] Generating mythical image for "${englishTopic}" via SDXL...`);
+
+        // Use SDXL-base via new HF Router endpoint
+        const endpoint = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0";
+
+        // Prompt for clean, isolated object with transparent-style background
+        // Focus on the object itself without celestial elements
+        const prompt = `A simple elegant illustration of ${englishTopic}, clean minimalist design, soft glowing outline, ethereal translucent style, isolated object on pure black background, no text no watermark, delicate line art, subtle glow effect, high quality digital art`;
+
+        const response = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${HF_TOKEN}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                inputs: prompt,
+                parameters: {
+                    negative_prompt: "text, watermark, words, letters, stars, particles, sparkles, dots, noise, busy background, complex background, detailed background, realistic photo, cartoon, anime, ugly, distorted, blurry, low quality",
+                    guidance_scale: 8.5,
+                    num_inference_steps: 35
+                }
+            }),
+        });
+
+        if (!response.ok) {
+            // Handle loading state (503)
+            if (response.status === 503) {
+                console.warn("[AI] HF Model Loading, retrying in 20s...");
+                await new Promise(r => setTimeout(r, 20000)); // Wait 20s for cold boot
+                return generateMythicalImage(_skeletonBase64, topic); // Retry once
+            }
+            const errorText = await response.text();
+            throw new Error(`HF API Error: ${response.status} - ${errorText}`);
+        }
+
+        const checkBlob = await response.blob();
+        const arrayBuffer = await checkBlob.arrayBuffer();
+        let imageBuffer = Buffer.from(arrayBuffer);
+
+        console.log(`[AI] Generated base image for "${topic}" (${imageBuffer.length} bytes)`);
+
+        // Step 2: Remove background using BRIA RMBG-2.0
+        try {
+            console.log(`[AI] Removing background...`);
+            const rmbgEndpoint = "https://router.huggingface.co/hf-inference/models/briaai/RMBG-2.0";
+
+            const rmbgResponse = await fetch(rmbgEndpoint, {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${HF_TOKEN}`,
+                    "Content-Type": "application/octet-stream",
+                },
+                body: imageBuffer,
+            });
+
+            if (rmbgResponse.ok) {
+                const rmbgBlob = await rmbgResponse.blob();
+                const rmbgArrayBuffer = await rmbgBlob.arrayBuffer();
+                imageBuffer = Buffer.from(rmbgArrayBuffer);
+                console.log(`[AI] Background removed successfully (${imageBuffer.length} bytes)`);
+            } else {
+                console.warn(`[AI] Background removal failed (${rmbgResponse.status}), using original image`);
+            }
+        } catch (rmbgErr) {
+            console.warn(`[AI] Background removal error: ${rmbgErr.message}, using original image`);
+        }
+
+        // Return as PNG with potential transparency
+        return `data:image/png;base64,${imageBuffer.toString('base64')}`;
+
+    } catch (error) {
+        console.error("[AI] Mythical Image Generation Failed:", error.message);
+        return null;
+    }
+}
+
 const embeddingModel = genAI.getGenerativeModel({
     model: "gemini-embedding-001"
 });
@@ -397,5 +502,6 @@ module.exports = {
     calculateImportanceMetrics,
     calculateStarRating,
     getEnglishEmbedding,
-    checkTopicRelevance // Exported
+    checkTopicRelevance, // Exported
+    generateMythicalImage
 };

@@ -92,7 +92,16 @@ router.post('/:id/complete', async (req, res) => {
         const aiService = require('../services/aiService');
         let imageUrl = null;
         try {
-            imageUrl = await aiService.generateConstellationImage(constellationName.trim());
+            // Check if we have a skeleton capture from frontend
+            const { constellationImageSkeleton } = req.body;
+
+            if (constellationImageSkeleton) {
+                // Use ControlNet for structure-aware generation
+                imageUrl = await aiService.generateMythicalImage(constellationImageSkeleton, constellationName.trim());
+            } else {
+                console.log("[Complete] No skeleton provided, skipping image generation.");
+                // fallback or skip
+            }
         } catch (imgErr) {
             console.error("[Complete] Image generation error:", imgErr.message);
         }

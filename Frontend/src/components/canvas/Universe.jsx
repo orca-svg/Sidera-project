@@ -1,5 +1,5 @@
-import { useRef, useEffect, useMemo, useCallback, Suspense } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { useRef, useEffect, useMemo, useCallback, Suspense, useState } from 'react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { CameraControls, Stars, useTexture, Sphere, MeshDistortMaterial, Html } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import { useStore } from '../../store/useStore'
@@ -284,6 +284,75 @@ function AnimatedUniverse({ children }) {
     return <group ref={groupRef}>{children}</group>
 }
 
+// Background layer for the active project's Mythical Image
+function MythicalBackgroundLayer() {
+    const { activeProjectId, projects, viewMode, nodes } = useStore()
+    const meshRef = useRef()
+
+    // 1. Get current project image
+    const currentProject = projects.find(p => p.id === activeProjectId)
+    const imageUrl = currentProject?.constellationImageUrl
+
+    // 2. Calculate constellation bounding box
+    const { center, size } = useMemo(() => {
+        if (!nodes || nodes.length === 0) return { center: [0, 0, 0], size: 20 }
+
+        const positions = nodes.map(n => n.position || [0, 0, 0])
+        const xs = positions.map(p => p[0])
+        const ys = positions.map(p => p[1])
+        const zs = positions.map(p => p[2])
+
+        const minX = Math.min(...xs), maxX = Math.max(...xs)
+        const minY = Math.min(...ys), maxY = Math.max(...ys)
+        const minZ = Math.min(...zs), maxZ = Math.max(...zs)
+
+        const centerX = (minX + maxX) / 2
+        const centerY = (minY + maxY) / 2
+        const centerZ = (minZ + maxZ) / 2
+
+        // Max dimension determines size
+        const rangeX = maxX - minX
+        const rangeY = maxY - minY
+        const maxRange = Math.max(rangeX, rangeY, 10) // Minimum 10 units
+
+        return {
+            center: [centerX, centerY, centerZ - 5], // Slightly behind
+            size: maxRange * 1.5 // 1.5x constellation size for margin
+        }
+    }, [nodes])
+
+    // 3. Texture loading
+    const [texture, setTexture] = useState(null)
+    useEffect(() => {
+        if (!imageUrl) {
+            setTexture(null)
+            return
+        }
+        const loader = new THREE.TextureLoader()
+        loader.load(imageUrl, (tex) => {
+            tex.colorSpace = THREE.SRGBColorSpace
+            setTexture(tex)
+        })
+    }, [imageUrl])
+
+    // Only show in constellation mode for completed projects
+    if (!texture || viewMode !== 'constellation' || currentProject?.status !== 'completed') return null
+
+    return (
+        <mesh ref={meshRef} position={center}>
+            <planeGeometry args={[size, size]} />
+            <meshBasicMaterial
+                map={texture}
+                transparent
+                opacity={0.18}
+                depthWrite={false}
+                blending={THREE.NormalBlending}
+                side={THREE.DoubleSide}
+            />
+        </mesh>
+    )
+}
+
 export function Universe({ isInteractive = true }) {
     // Optimized: Use selective Zustand selectors to prevent unnecessary re-renders
     const nodes = useStore(state => state.nodes)
@@ -450,6 +519,8 @@ export function Universe({ isInteractive = true }) {
                     {/* Layer 1: Persistent Background Stars (Always visible with Parallax) */}
                     <Stars radius={300} depth={50} count={visualConfig.starCount} factor={4} saturation={0} fade speed={1} />
 
+                    {/* Layer 1.2: Active Mythical Background (Parallax ControlNet Image) */}
+                    <MythicalBackgroundLayer />
 
                     {/* Layer 1.5: Completed Constellation Background Images */}
                     <CompletedConstellationBackgrounds />

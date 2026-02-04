@@ -45,9 +45,9 @@ export function EndConversationModal({ isOpen, onClose, projectId, nodes, edges,
 
     // Draw edges first (타입별 색상: Constellation.jsx와 동일)
     const edgeStyles = {
-      temporal:  { color: 'rgba(68, 85, 102, 0.5)',  dash: [4, 3] },
-      explicit:  { color: 'rgba(0, 255, 255, 0.7)',  dash: []     },
-      implicit:  { color: 'rgba(136, 170, 255, 0.45)', dash: [4, 3] }
+      temporal: { color: 'rgba(68, 85, 102, 0.5)', dash: [4, 3] },
+      explicit: { color: 'rgba(0, 255, 255, 0.7)', dash: [] },
+      implicit: { color: 'rgba(136, 170, 255, 0.45)', dash: [4, 3] }
     }
     ctx.lineWidth = 1
     edges?.forEach(edge => {
@@ -105,7 +105,15 @@ export function EndConversationModal({ isOpen, onClose, projectId, nodes, edges,
     setError(null)
 
     try {
-      const result = await onComplete(name.trim())
+      // Capture the current canvas as the skeleton for AI alignment
+      let skeletonImage = null;
+      if (canvasRef.current) {
+        skeletonImage = canvasRef.current.toDataURL('image/jpeg', 0.9);
+      }
+
+      // Pass name AND skeleton image to the completion handler
+      const result = await onComplete(name.trim(), skeletonImage)
+
       if (result.success) {
         setResultImage(result.imageUrl)
         setStage('success')

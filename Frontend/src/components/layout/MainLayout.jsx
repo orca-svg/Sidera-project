@@ -994,8 +994,8 @@ export function MainLayout() {
                         projectId={activeProjectId}
                         nodes={nodes}
                         edges={edges}
-                        onComplete={async (name) => {
-                            const result = await completeProject(activeProjectId, name)
+                        onComplete={async (name, skeletonImage) => {
+                            const result = await completeProject(activeProjectId, name, skeletonImage)
                             return result
                         }}
                     />
