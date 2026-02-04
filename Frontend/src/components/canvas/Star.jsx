@@ -95,8 +95,8 @@ export function Star({ position, node, isSelected, onClick }) {
         }
     })
 
-    // Label Logic
-    const showLabel = viewMode === 'constellation' && (hovered || isSelected || importance >= 5);
+    // Label Logic - STRICT: Only show if hovered or selected (as requested)
+    const showLabel = viewMode === 'constellation' && (hovered || isSelected);
 
     return (
         <group position={position} onClick={onClick}>
