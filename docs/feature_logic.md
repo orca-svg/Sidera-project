@@ -92,3 +92,170 @@
 ### 의도
 - **채팅 모드**: 사용자가 특정 대화 내용을 찾고 싶을 때, 불필요한 화면 전환 없이 해당 위치로 부드럽게 스크롤합니다.
 - **별자리 모드**: 그래프를 탐색하는 몰입감을 유지하기 위해, 카메라가 해당 별(노드)로 날아가는 연출을 제공합니다.
+
+---
+
+## 6. 검색 기능 (Stellar Search)
+
+### 설계 철학
+현대적인 "소셜 검색(Social Search)" 패턴을 적용하여, 사용자가 입력하는 즉시 관련 결과를 보여주는 실시간 검색 경험을 제공합니다.
+
+### 핵심 기능
+
+#### A. 실시간 검색 (Live Search)
+- **디바운싱**: 300ms 지연을 적용하여 타이핑 중 불필요한 API 호출을 방지합니다.
+- **자동 트리거**: Enter 키 없이 타이핑만으로 결과가 나타납니다.
+- **로딩 표시**: 검색 중 스피너 애니메이션으로 피드백을 제공합니다.
+
+#### B. 이중 범위 검색 (Dual-Scope Search)
+검색 결과가 두 개의 카테고리로 분류되어 표시됩니다:
+
+| 카테고리 | 아이콘 | 검색 대상 |
+|----------|--------|-----------|
+| **Projects** | 🌌 | 프로젝트 제목 (로컬 필터링) |
+| **Topics** | ⭐ | 노드의 질문, 답변, 키워드, 토픽 요약 (백엔드 검색) |
+
+#### C. 매칭 필드 표시 (Match Type Detection)
+검색 결과가 어디에서 일치했는지 시각적으로 표시합니다:
+
+| 배지 | 색상 | 의미 |
+|------|------|------|
+| **Q** | 파란색 | 질문(Question)에서 일치 |
+| **A** | 초록색 | 답변(Answer)에서 일치 |
+| **#** | 노란색 | 키워드(Keyword)에서 일치 |
+| **★** | 청록색 | 토픽 요약(Topic)에서 일치 |
+
+- 답변에서 일치한 경우, 일치 위치 주변의 컨텍스트 스니펫을 표시합니다.
+- 질문/답변 매칭 시 해당 토픽명을 브레드크럼(📍)으로 함께 표시합니다.
+
+#### D. 키보드 탐색 (Keyboard Navigation)
+| 키 | 동작 |
+|----|------|
+| ↑↓ | 결과 목록 탐색 |
+| Enter | 선택한 항목으로 이동 |
+| Esc | 검색 닫기 |
+
+### 백엔드 검색 필드
+`/nodes/search` 엔드포인트는 다음 필드들을 대소문자 구분 없이 검색합니다:
+- `shortTitle`
+- `topicSummary`
+- `starLabel`
+- `question`
+- `answer`
+- `keywords`
+- `summary`
+
+### 관련 파일
+- `Frontend/src/hooks/useDebounce.js`: 디바운스 훅
+- `Frontend/src/components/layout/MainLayout.jsx`: 검색 UI 및 로직
+- `Frontend/src/store/useStore.js`: `searchNodes` 함수
+- `Backend/routes/nodes.js`: 검색 API 엔드포인트
+
+---
+
+## 7. 별자리 완성 (Constellation Completion)
+
+대화를 "완성"하여 읽기 전용으로 보존하고, AI 생성 이미지로 영구 기념하는 기능입니다.
+
+### 완성 플로우
+
+```
+[사용자: "이 별자리를 완성하기" 클릭]
+         ↓
+[모달: 2D 미리보기 + 이름 입력]
+         ↓
+[Imagen 3.0 API: 성운 이미지 생성]
+         ↓
+[프로젝트 잠금 (status: 'completed')]
+         ↓
+[배경에 이미지 표시 (다른 대화에서)]
+```
+
+### A. 프로젝트 잠금 (Read-Only Lock)
+
+| 상태 | 동작 |
+|------|------|
+| **채팅 입력** | 비활성화 + "이 별자리는 완성되었습니다" 메시지 |
+| **백엔드** | `POST /chat` 요청 시 403 + `PROJECT_COMPLETED` 코드 반환 |
+| **사이드바** | MessageSquare 아이콘 → ✦ 아이콘으로 변경 |
+| **이름 변경** | Edit 버튼 숨김 (삭제만 가능) |
+
+### B. Imagen 3.0 이미지 생성
+
+- **엔드포인트**: `POST /api/projects/:id/complete`
+- **프롬프트**: 
+  ```
+  A breathtaking cosmic nebula scene representing "${constellationName}", 
+  dark deep space, vibrant nebula in purple blue gold, 
+  connected bright stars, ethereal glow, dreamy cinematic, 
+  no text no watermarks
+  ```
+- **Graceful Degradation**: 이미지 생성 실패 시에도 프로젝트는 정상 완료됨 (이름만 저장)
+
+### C. 완성 모달 (EndConversationModal)
+
+**3단계 플로우:**
+
+| 단계 | 내용 |
+|------|------|
+| **input** | 2D Canvas 별자리 미리보기 + 이름 입력 |
+| **generating** | 스피너 + "별자리를 완성하고 있습니다..." |
+| **success** | 생성된 이미지 (또는 실패 안내) + 확인 버튼 |
+
+**2D 미리보기 시각화:**
+- 노드 색상: 중요도별 (5★=#FFD700, 4★=#00FFFF, 3★=#88AAFF, 2★=#FFF, 1★=#888)
+- 엣지: 연한 파란색 선으로 연결
+
+### D. 완료된 별자리 배경 렌더링 (3D Rendering)
+
+기존의 정적 이미지 방식에서 벗어나, 실제 3D 데이터(노드/엣지)를 기반으로 배경 별자리를 렌더링하여 깊이감과 통일성을 제공합니다.
+
+| 속성 | 상세 내용 |
+|------|-----------|
+| **렌더링 방식** | **Real-time 3D Structure** (Not Image) |
+| **구성 요소** | **Stars** (MeshDistortMaterial), **Edges** (Lines), **Orbital Particles** |
+| **위치 분산** | **X: ±80, Y: ±40, Z: -60 ~ -120** (광활한 우주 배경) |
+| **스케일링** | 원근감(Perspective)을 위해 거리에 따라 자동 축소 |
+| **표시 조건** | `viewMode === 'constellation'`일 때만 표시 (채팅 모드에서는 숨김) |
+| **예외 처리** | 현재 보고 있는 프로젝트(Self)는 배경에서 제외 |
+
+**시각적 디테일 (Visual Polish):**
+- **Stars**: 중요도(1-5)에 따른 크기 및 색상 차별화 (Gold/Cyan Emissive Glow).
+- **Distortion**: `MeshDistortMaterial`을 사용하여 별이 은은하게 일렁이는 효과 적용.
+- **Orbital Particles**: 1등성/2등성 별 주위를 공전하는 미세한 파티클 추가 (속도/밝기 최적화로 눈부심 방지).
+
+### E. Backend 스키마 (Project)
+
+```javascript
+status: { type: String, enum: ['active', 'completed'], default: 'active' }
+completedAt: { type: Date, default: null }
+constellationName: { type: String, default: null }
+constellationImageUrl: { type: String, default: null }  // base64 data URI (Legacy support or fallback)
+```
+
+### F. Frontend Store 상태
+
+```javascript
+completedImages: []
+// 구조:
+// [{
+//    projectId,
+//    constellationName,
+//    nodes: [{ id, position, importance, ... }],  // 3D 렌더링용 실제 데이터
+//    edges: [{ source, target, type }]
+// }]
+
+// 액션
+completeProject(projectId, constellationName)  // POST /projects/:id/complete
+fetchCompletedImages()                          // GET /projects/completed-images (노드/엣지 데이터 포함)
+```
+
+### 관련 파일
+- `Backend/models/Project.js`: 완료 관련 스키마 필드
+- `Backend/services/aiService.js`: `generateConstellationImage` 함수
+- `Backend/routes/projects.js`: `/completed-images`, `/:id/complete` 엔드포인트
+- `Backend/routes/chat.js`: 완료된 프로젝트 잠금 체크
+- `Frontend/src/store/useStore.js`: `completeProject`, `fetchCompletedImages` 액션
+- `Frontend/src/components/layout/EndConversationModal.jsx`: 완성 모달 컴포넌트
+- `Frontend/src/components/layout/MainLayout.jsx`: 완성 버튼, 잠금 UI
+- `Frontend/src/components/canvas/Universe.jsx`: 배경 이미지 렌더링

@@ -14,6 +14,9 @@ router.get('/search', async (req, res) => {
         const nodes = await Node.find({
             projectId: projectId,
             $or: [
+                { shortTitle: { $regex: query, $options: 'i' } },
+                { topicSummary: { $regex: query, $options: 'i' } },
+                { starLabel: { $regex: query, $options: 'i' } },
                 { question: { $regex: query, $options: 'i' } },
                 { answer: { $regex: query, $options: 'i' } },
                 { keywords: { $regex: query, $options: 'i' } },

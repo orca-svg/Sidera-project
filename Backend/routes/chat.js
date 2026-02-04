@@ -131,6 +131,14 @@ router.post('/', async (req, res) => {
             if (!project) {
                 return res.status(403).json({ error: 'Forbidden: You do not own this project' });
             }
+
+            // Lock Check: Completed projects are read-only
+            if (project.status === 'completed') {
+                return res.status(403).json({
+                    error: 'This constellation has been completed.',
+                    code: 'PROJECT_COMPLETED'
+                });
+            }
         }
 
         // --- GUEST MODE: VOLATILE (NO DB SAVE) ---

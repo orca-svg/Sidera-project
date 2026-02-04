@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Universe } from '../canvas/Universe'
 import { useStore } from '../../store/useStore'
 import { useEventListener } from '../../hooks/useEventListener'
+import { useDebounce } from '../../hooks/useDebounce'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
     Menu, Plus, MessageSquare, X, Settings,
@@ -13,6 +14,7 @@ import clsx from 'clsx'
 import { TopicList } from './TopicList'
 import { HelpModal } from './HelpModal'
 import { SettingsModal } from './SettingsModal'
+import { EndConversationModal } from './EndConversationModal'
 import { useAuth } from '../../auth/AuthContext'
 
 
@@ -26,6 +28,7 @@ const SUGGESTION_CARDS = [
 export function MainLayout() {
     // Optimized: Use selective Zustand selectors to prevent unnecessary re-renders
     const nodes = useStore(state => state.nodes)
+    const edges = useStore(state => state.edges)
     const addNode = useStore(state => state.addNode)
     const setActiveNode = useStore(state => state.setActiveNode)
     const activeNode = useStore(state => state.activeNode)
@@ -40,20 +43,40 @@ export function MainLayout() {
     const renameProject = useStore(state => state.renameProject)
     const searchNodes = useStore(state => state.searchNodes)
     const flyToNode = useStore(state => state.flyToNode)
+    const completeProject = useStore(state => state.completeProject)
+    const completedImages = useStore(state => state.completedImages) // For Observatory Button
+    const observatoryFocusedConstellation = useStore(state => state.observatoryFocusedConstellation)
+    const observatoryHoveredConstellation = useStore(state => state.observatoryHoveredConstellation)
+    const enterConstellationFromObservatory = useStore(state => state.enterConstellationFromObservatory)
+    const setObservatoryFocusedConstellation = useStore(state => state.setObservatoryFocusedConstellation)
     const user = useStore(state => state.user) // Get synced user from store
+
+    // Derived: Current project locked status
+    const currentProjectStatus = useStore(state => {
+        const p = state.projects.find(pr => pr.id === state.activeProjectId)
+        return p?.status || 'active'
+    })
+    const isLocked = currentProjectStatus === 'completed'
+    const isGuest = user?.isGuest
 
     const { logout } = useAuth()
 
     const [inputValue, setInputValue] = useState('')
     const [isSidebarOpen, setIsSidebarOpen] = useState(true)
     const [isHelpOpen, setIsHelpOpen] = useState(false) // New Help State
+    const [isEndModalOpen, setIsEndModalOpen] = useState(false)
     const [isSettingsOpen, setIsSettingsOpen] = useState(false)
 
     // Feature States
     const [searchQuery, setSearchQuery] = useState('')
     const [searchResults, setSearchResults] = useState(null)
+    const [isSearching, setIsSearching] = useState(false)
+    const [selectedSearchIndex, setSelectedSearchIndex] = useState(0)
     const [editingProjectId, setEditingProjectId] = useState(null)
     const [renameValue, setRenameValue] = useState('')
+
+    // Debounced search query (300ms delay)
+    const debouncedSearchQuery = useDebounce(searchQuery, 300)
 
     const chatEndRef = useRef(null)
     const inputRef = useRef(null)
@@ -86,13 +109,75 @@ export function MainLayout() {
         setInputValue('')
     }
 
-    // --- Feature Handlers ---
-    const handleSearch = async (e) => {
-        e.preventDefault()
-        if (!searchQuery.trim()) return
-        const results = await searchNodes(searchQuery)
-        setSearchResults(results)
+    // --- Live Search Effect ---
+    useEffect(() => {
+        const performSearch = async () => {
+            if (!debouncedSearchQuery.trim()) {
+                setSearchResults(null)
+                setSelectedSearchIndex(0)
+                return
+            }
+
+            setIsSearching(true)
+            try {
+                // Search nodes in current project
+                const nodeResults = await searchNodes(debouncedSearchQuery)
+
+                // Search projects by title (local filter)
+                const matchingProjects = projects.filter(p =>
+                    p.title.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
+                )
+
+                setSearchResults({
+                    projects: matchingProjects,
+                    nodes: nodeResults || []
+                })
+                setSelectedSearchIndex(0)
+            } catch (err) {
+                console.error("[Search Error]", err)
+                setSearchResults({ projects: [], nodes: [] })
+            } finally {
+                setIsSearching(false)
+            }
+        }
+
+        performSearch()
+    }, [debouncedSearchQuery, projects, searchNodes])
+
+    // --- Keyboard Navigation for Search ---
+    const handleSearchKeyDown = (e) => {
+        if (!searchResults) return
+
+        const totalResults = (searchResults.projects?.length || 0) + (searchResults.nodes?.length || 0)
+        if (totalResults === 0) return
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            setSelectedSearchIndex(prev => (prev + 1) % totalResults)
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            setSelectedSearchIndex(prev => (prev - 1 + totalResults) % totalResults)
+        } else if (e.key === 'Enter' && searchResults) {
+            e.preventDefault()
+            const projectCount = searchResults.projects?.length || 0
+            if (selectedSearchIndex < projectCount) {
+                // Selected a project
+                const project = searchResults.projects[selectedSearchIndex]
+                setActiveProject(project.id)
+            } else {
+                // Selected a node
+                const node = searchResults.nodes[selectedSearchIndex - projectCount]
+                if (node) flyToNode(node.id)
+            }
+            setSearchQuery('')
+            setSearchResults(null)
+        } else if (e.key === 'Escape') {
+            setSearchQuery('')
+            setSearchResults(null)
+        }
     }
+
+    // --- Feature Handlers ---
 
     const handleDeleteProject = async (projectId, e) => {
         e.stopPropagation()
@@ -160,10 +245,27 @@ export function MainLayout() {
         }
     }, [activeNode]);
 
-    // ESC Key Listener for connection mode - Optimized: Use custom hook
+    // ESC & Enter Key Listener for connection mode
     useEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && viewMode === 'constellation') {
-            setViewMode('chat')
+        if (viewMode === 'constellation') {
+            if (e.key === 'Escape') setViewMode('chat')
+        } else if (viewMode === 'observatory') {
+            if (e.key === 'Escape') {
+                if (observatoryFocusedConstellation) {
+                    // Back to Overview
+                    setObservatoryFocusedConstellation(null)
+                } else {
+                    // Exit Observatory
+                    setViewMode('chat')
+                }
+            } else if (e.key === 'Enter') {
+                if (observatoryFocusedConstellation) {
+                    enterConstellationFromObservatory(observatoryFocusedConstellation.projectId)
+                } else if (observatoryHoveredConstellation) {
+                    // Also allow entering if just hovering
+                    enterConstellationFromObservatory(observatoryHoveredConstellation)
+                }
+            }
         }
     })
 
@@ -205,6 +307,39 @@ export function MainLayout() {
                 {isSettingsOpen && <SettingsModal onClose={() => setIsSettingsOpen(false)} />}
             </AnimatePresence>
 
+            {/* Observatory Mode Hints */}
+            {viewMode === 'observatory' && (
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 20 }}
+                    className={clsx(
+                        "fixed bottom-8 right-0 z-50 pointer-events-none flex justify-center transition-all duration-300 ease-in-out",
+                        isSidebarOpen ? "md:left-[280px] w-full md:w-[calc(100%-280px)]" : "left-0 w-full"
+                    )}
+                >
+                    <div className="pointer-events-auto px-6 py-3 rounded-full bg-black/60 backdrop-blur-xl border border-purple-500/30 text-white text-sm flex items-center gap-3 shadow-[0_0_50px_rgba(168,85,247,0.5)]">
+                        <div className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></div>
+                        <span className="text-purple-100 font-medium">Observatory Active</span>
+                        <span className="text-gray-400 border-l border-white/20 pl-3 ml-1 mr-2">
+                            {observatoryFocusedConstellation ? (
+                                <>Press <span className="font-bold text-white">Enter</span> to join or <span className="font-bold text-white">ESC</span> to back</>
+                            ) : (
+                                <>Click to explore or Press <span className="font-bold text-white">ESC</span> to exit</>
+                            )}
+                        </span>
+
+                        <button
+                            onClick={handleCapture}
+                            className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-colors border border-white/5 ml-2"
+                            title="Capture View"
+                        >
+                            <Camera size={16} />
+                        </button>
+                    </div>
+                </motion.div>
+            )}
+
             {/* LAYER 0: Background Universe */}
             <div className="absolute inset-0 z-0 pointer-events-auto">
                 <Universe isInteractive={true} />
@@ -239,18 +374,22 @@ export function MainLayout() {
 
                 {/* View Mode Section: Search & New Chat */}
                 <div className="px-4 pb-4 space-y-3 shrink-0">
-                    {/* Search Input */}
+                    {/* Search Input with Live Search */}
                     <div className="relative group">
                         <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                            <Telescope size={16} className="text-gray-500 group-focus-within:text-accent transition-colors" />
+                            {isSearching ? (
+                                <div className="w-4 h-4 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+                            ) : (
+                                <Telescope size={16} className="text-gray-500 group-focus-within:text-accent transition-colors" />
+                            )}
                         </div>
                         <input
                             type="text"
-                            placeholder="Search stars..."
-                            className="w-full bg-black/20 border border-white/10 rounded-lg py-2 pl-9 pr-3 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-accent/40 focus:bg-black/40 transition-all"
+                            placeholder="Search projects & topics..."
+                            className="w-full bg-black/20 border border-white/10 rounded-lg py-2 pl-9 pr-8 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-accent/40 focus:bg-black/40 transition-all"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleSearch(e)}
+                            onKeyDown={handleSearchKeyDown}
                         />
                         {searchQuery && (
                             <button
@@ -263,47 +402,167 @@ export function MainLayout() {
                     </div>
 
                     <button
-                        onClick={createProject}
+                        onClick={async () => {
+                            await createProject();
+                            setViewMode('chat');
+                        }}
                         className="w-full h-10 flex items-center gap-3 px-4 bg-gray-800 hover:bg-gray-700 text-gray-200 hover:text-white rounded-full transition-all duration-200 border border-transparent hover:border-accent/30 group shadow-lg"
                     >
                         <Plus size={18} className="text-gray-400 group-hover:text-accent transition-colors" />
                         <span className="text-sm font-medium">New chat</span>
                     </button>
+
+                    {/* Observatory Button */}
+                    <button
+                        onClick={() => setViewMode('observatory')}
+                        disabled={isGuest || completedImages.length === 0}
+                        className={clsx(
+                            "w-full h-10 flex items-center gap-3 px-4 rounded-full transition-all duration-200 border group shadow-lg",
+                            viewMode === 'observatory'
+                                ? "bg-purple-500/20 border-purple-500/40 text-purple-300"
+                                : "bg-gray-800/60 hover:bg-gray-700 text-gray-400 hover:text-white border-transparent hover:border-purple-500/30",
+                            (isGuest || completedImages.length === 0) && "opacity-50 cursor-not-allowed hidden" // Hide if empty
+                        )}
+                    >
+                        <Telescope size={18} className={clsx(viewMode === 'observatory' ? "text-purple-300" : "text-purple-400")} />
+                        <span className="text-sm font-medium">Observatory</span>
+                        {completedImages.length > 0 && (
+                            <span className="ml-auto text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full">
+                                {completedImages.length}
+                            </span>
+                        )}
+                    </button>
                 </div>
 
-                {/* Content Section: History or Search Results */}
+                {/* Content Section: Search Results or History */}
                 <div className="flex-1 overflow-y-auto px-2 py-2 custom-scrollbar">
                     {searchResults ? (
                         <>
-                            <div className="px-3 mb-2 text-xs font-semibold text-accent uppercase tracking-wider flex items-center justify-between">
-                                <span>Search Results</span>
-                                <span className="text-[10px] bg-accent/10 px-1.5 py-0.5 rounded">{searchResults.length}</span>
-                            </div>
-                            <div className="space-y-1">
-                                {searchResults.length === 0 ? (
-                                    <div className="px-3 py-4 text-center text-sm text-gray-500">
-                                        No stars found.
-                                    </div>
-                                ) : (
-                                    searchResults.map(node => (
-                                        <button
-                                            key={node.id}
-                                            onClick={() => {
-                                                flyToNode(node.id);
-                                                if (window.innerWidth < 768) setIsSidebarOpen(false);
-                                            }}
-                                            className="w-full text-left flex items-start gap-3 px-3 py-3 rounded-lg text-sm hover:bg-white/5 group relative overflow-hidden transition-all"
-                                        >
-                                            <Sparkles size={14} className="mt-0.5 text-accent shrink-0" />
-                                            <div className="flex-1 min-w-0">
-                                                <div className="truncate text-gray-200 group-hover:text-white">{node.question}</div>
-                                                <div className="text-[10px] text-gray-500 truncate">
-                                                    Position: [{node.position[0].toFixed(1)}, {node.position[1].toFixed(1)}]
-                                                </div>
+                            {/* Categorized Search Results */}
+                            {(searchResults.projects?.length === 0 && searchResults.nodes?.length === 0) ? (
+                                <div className="px-3 py-8 text-center">
+                                    <Telescope size={32} className="mx-auto text-gray-600 mb-2" />
+                                    <div className="text-sm text-gray-500">No results found for "{searchQuery}"</div>
+                                    <div className="text-xs text-gray-600 mt-1">Try a different search term</div>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Projects Section */}
+                                    {searchResults.projects?.length > 0 && (
+                                        <div className="mb-4">
+                                            <div className="px-3 mb-2 text-[10px] font-semibold text-purple-400 uppercase tracking-wider flex items-center gap-2">
+                                                <span>🌌 Projects</span>
+                                                <span className="bg-purple-500/20 px-1.5 py-0.5 rounded">{searchResults.projects.length}</span>
                                             </div>
-                                        </button>
-                                    ))
-                                )}
+                                            <div className="space-y-1">
+                                                {searchResults.projects.map((project, idx) => (
+                                                    <button
+                                                        key={project.id}
+                                                        onClick={() => {
+                                                            setActiveProject(project.id);
+                                                            setSearchQuery('');
+                                                            setSearchResults(null);
+                                                        }}
+                                                        className={clsx(
+                                                            "w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all",
+                                                            selectedSearchIndex === idx
+                                                                ? "bg-purple-500/20 border border-purple-500/40"
+                                                                : "hover:bg-white/5"
+                                                        )}
+                                                    >
+                                                        <MessageSquare size={14} className="text-purple-400 shrink-0" />
+                                                        <span className="truncate text-gray-200">{project.title}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Nodes Section */}
+                                    {searchResults.nodes?.length > 0 && (
+                                        <div>
+                                            <div className="px-3 mb-2 text-[10px] font-semibold text-accent uppercase tracking-wider flex items-center gap-2">
+                                                <span>⭐ Topics</span>
+                                                <span className="bg-accent/20 px-1.5 py-0.5 rounded">{searchResults.nodes.length}</span>
+                                            </div>
+                                            <div className="space-y-1">
+                                                {searchResults.nodes.map((node, idx) => {
+                                                    const resultIndex = (searchResults.projects?.length || 0) + idx;
+
+                                                    // Determine which field matched and show it accordingly
+                                                    const query = searchQuery.toLowerCase();
+                                                    let matchType = 'topic';
+                                                    let displayText = node.shortTitle || node.topicSummary || node.question;
+
+                                                    if (node.question?.toLowerCase().includes(query)) {
+                                                        matchType = 'question';
+                                                        displayText = node.question;
+                                                    } else if (node.answer?.toLowerCase().includes(query)) {
+                                                        matchType = 'answer';
+                                                        // Show snippet around the match
+                                                        const matchIndex = node.answer.toLowerCase().indexOf(query);
+                                                        const start = Math.max(0, matchIndex - 20);
+                                                        const end = Math.min(node.answer.length, matchIndex + query.length + 40);
+                                                        displayText = (start > 0 ? '...' : '') + node.answer.slice(start, end) + (end < node.answer.length ? '...' : '');
+                                                    } else if (node.keywords?.some(k => k.toLowerCase().includes(query))) {
+                                                        matchType = 'keyword';
+                                                        displayText = node.shortTitle || node.topicSummary || node.question;
+                                                    }
+
+                                                    // Badge colors based on match type
+                                                    const badgeStyles = {
+                                                        question: 'bg-blue-500/20 text-blue-400',
+                                                        answer: 'bg-green-500/20 text-green-400',
+                                                        keyword: 'bg-yellow-500/20 text-yellow-400',
+                                                        topic: 'bg-accent/20 text-accent'
+                                                    };
+                                                    const badgeLabels = {
+                                                        question: 'Q',
+                                                        answer: 'A',
+                                                        keyword: '#',
+                                                        topic: '★'
+                                                    };
+
+                                                    return (
+                                                        <button
+                                                            key={node.id}
+                                                            onClick={() => {
+                                                                flyToNode(node.id);
+                                                                setSearchQuery('');
+                                                                setSearchResults(null);
+                                                                if (window.innerWidth < 768) setIsSidebarOpen(false);
+                                                            }}
+                                                            className={clsx(
+                                                                "w-full text-left flex items-start gap-3 px-3 py-2.5 rounded-lg text-sm transition-all",
+                                                                selectedSearchIndex === resultIndex
+                                                                    ? "bg-accent/20 border border-accent/40"
+                                                                    : "hover:bg-white/5"
+                                                            )}
+                                                        >
+                                                            <span className={clsx("shrink-0 w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center", badgeStyles[matchType])}>
+                                                                {badgeLabels[matchType]}
+                                                            </span>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="truncate text-gray-200">{displayText}</div>
+                                                                {matchType !== 'topic' && node.topicSummary && (
+                                                                    <div className="text-[10px] text-gray-500 truncate mt-0.5">
+                                                                        📍 {node.topicSummary}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                            {/* Keyboard hint */}
+                            <div className="px-3 pt-3 mt-2 border-t border-white/5 text-[10px] text-gray-600 flex items-center gap-3">
+                                <span>↑↓ Navigate</span>
+                                <span>↵ Select</span>
+                                <span>Esc Close</span>
                             </div>
                         </>
                     ) : (
@@ -330,10 +589,18 @@ export function MainLayout() {
                                             )}
                                         >
                                             <button
-                                                onClick={() => setActiveProject(project.id)}
+                                                onClick={() => {
+                                                    setActiveProject(project.id);
+                                                    setViewMode('chat');
+                                                }}
                                                 className="flex-1 flex items-center gap-3 px-3 py-3 min-w-0 text-left"
                                             >
-                                                <MessageSquare size={16} className={activeProjectId === project.id ? "text-accent" : "text-gray-600 group-hover:text-gray-400"} />
+                                                {/* Show ✦ for completed, MessageSquare for active */}
+                                                {project.status === 'completed' ? (
+                                                    <span className="text-amber-400 shrink-0">✦</span>
+                                                ) : (
+                                                    <MessageSquare size={16} className={activeProjectId === project.id ? "text-accent" : "text-gray-600 group-hover:text-gray-400"} />
+                                                )}
 
                                                 {editingProjectId === project.id ? (
                                                     <input
@@ -358,16 +625,19 @@ export function MainLayout() {
                                                 )}
                                             </button>
 
-                                            {/* Hover Actions (Edit/Delete) - Only show when not editing */}
+                                            {/* Hover Actions (Edit/Delete) - Only show when not editing, hide Edit for completed */}
                                             {editingProjectId !== project.id && (
                                                 <div className="absolute right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-900/80 rounded backdrop-blur-sm">
-                                                    <button
-                                                        onClick={(e) => startEditing(project, e)}
-                                                        className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded"
-                                                        title="Rename"
-                                                    >
-                                                        <Edit2 size={12} />
-                                                    </button>
+                                                    {/* Hide Edit button for completed projects */}
+                                                    {project.status !== 'completed' && (
+                                                        <button
+                                                            onClick={(e) => startEditing(project, e)}
+                                                            className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded"
+                                                            title="Rename"
+                                                        >
+                                                            <Edit2 size={12} />
+                                                        </button>
+                                                    )}
                                                     <button
                                                         onClick={(e) => handleDeleteProject(project.id, e)}
                                                         className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded"
@@ -590,51 +860,75 @@ export function MainLayout() {
                         {/* Gradient Mask: Constrained to Center Column (User Request) */}
                         {/* Hides scrolling text BEHIND the input box, but keeps Left/Right sides transparent for stars */}
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-background via-background/90 to-transparent pointer-events-none h-48 -bottom-8 z-[-1]"></div>
-                        <form onSubmit={handleSubmit} className="relative group">
-                            <div className="absolute inset-0 bg-gradient-to-r from-accent/5 via-purple-500/5 to-accent/5 rounded-[28px] blur-xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-700"></div>
 
-                            <div className="glass-input relative flex items-end gap-3 p-3 rounded-[28px] bg-gray-900/80 border border-white/10 shadow-2xl backdrop-blur-xl">
-                                <button type="button" className="p-3 text-gray-400 hover:text-white bg-gray-800/50 hover:bg-gray-700 rounded-full transition-colors self-end mb-0.5">
-                                    <Plus size={20} />
-                                </button>
-
-                                <textarea
-                                    ref={inputRef}
-                                    value={inputValue}
-                                    onChange={(e) => setInputValue(e.target.value)}
-                                    placeholder="Message Sidera..."
-                                    rows={1}
-                                    className="flex-1 bg-transparent border-none outline-none text-white placeholder-gray-500 text-lg resize-none min-h-[48px] max-h-[200px] py-3 px-2 hide-scrollbar"
-                                    onCompositionStart={() => isComposing.current = true}
-                                    onCompositionEnd={() => isComposing.current = false}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter' && !e.shiftKey) {
-                                            if (isComposing.current) return; // Prevent duplicate submit
-                                            e.preventDefault();
-                                            handleSubmit(e);
-                                        }
-                                    }}
-                                />
-
-                                <div className="flex items-center gap-2 self-end mb-0.5">
-                                    <button type="button" className="p-3 text-gray-400 hover:text-white transition-colors hover:bg-white/5 rounded-full">
-                                        <Mic size={20} />
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className={clsx(
-                                            "p-3 rounded-full transition-all duration-300 shadow-lg",
-                                            inputValue.trim()
-                                                ? "bg-white text-black hover:scale-105 hover:bg-accent hover:text-black"
-                                                : "bg-gray-800 text-gray-600 cursor-not-allowed"
-                                        )}
-                                        disabled={!inputValue.trim()}
-                                    >
-                                        <Send size={18} className={inputValue.trim() ? "fill-current" : ""} />
-                                    </button>
-                                </div>
+                        {/* Locked State: Show completed widget instead of form */}
+                        {isLocked ? (
+                            <div className="glass-input relative flex items-center justify-center gap-3 p-4 rounded-[28px] bg-gray-900/80 border border-amber-500/20 shadow-2xl backdrop-blur-xl">
+                                <span className="text-amber-400 text-lg">✦</span>
+                                <p className="text-amber-300 text-sm">이 별자리는 완성되었습니다</p>
                             </div>
-                        </form>
+                        ) : (
+                            <>
+                                {/* Complete Button (above form) */}
+                                {!isGuest && nodes.length > 0 && (
+                                    <div className="flex justify-center mb-2">
+                                        <button
+                                            onClick={() => setIsEndModalOpen(true)}
+                                            className="flex items-center gap-1.5 px-3 py-1 text-[11px] text-gray-500 hover:text-amber-300 border border-transparent hover:border-amber-500/30 rounded-full hover:bg-amber-500/10 transition-all"
+                                        >
+                                            <span>✦</span>
+                                            <span>이 별자리를 완성하기</span>
+                                        </button>
+                                    </div>
+                                )}
+
+                                <form onSubmit={handleSubmit} className="relative group">
+                                    <div className="absolute inset-0 bg-gradient-to-r from-accent/5 via-purple-500/5 to-accent/5 rounded-[28px] blur-xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-700"></div>
+
+                                    <div className="glass-input relative flex items-end gap-3 p-3 rounded-[28px] bg-gray-900/80 border border-white/10 shadow-2xl backdrop-blur-xl">
+                                        <button type="button" className="p-3 text-gray-400 hover:text-white bg-gray-800/50 hover:bg-gray-700 rounded-full transition-colors self-end mb-0.5">
+                                            <Plus size={20} />
+                                        </button>
+
+                                        <textarea
+                                            ref={inputRef}
+                                            value={inputValue}
+                                            onChange={(e) => setInputValue(e.target.value)}
+                                            placeholder="Message Sidera..."
+                                            rows={1}
+                                            className="flex-1 bg-transparent border-none outline-none text-white placeholder-gray-500 text-lg resize-none min-h-[48px] max-h-[200px] py-3 px-2 hide-scrollbar"
+                                            onCompositionStart={() => isComposing.current = true}
+                                            onCompositionEnd={() => isComposing.current = false}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' && !e.shiftKey) {
+                                                    if (isComposing.current) return; // Prevent duplicate submit
+                                                    e.preventDefault();
+                                                    handleSubmit(e);
+                                                }
+                                            }}
+                                        />
+
+                                        <div className="flex items-center gap-2 self-end mb-0.5">
+                                            <button type="button" className="p-3 text-gray-400 hover:text-white transition-colors hover:bg-white/5 rounded-full">
+                                                <Mic size={20} />
+                                            </button>
+                                            <button
+                                                type="submit"
+                                                className={clsx(
+                                                    "p-3 rounded-full transition-all duration-300 shadow-lg",
+                                                    inputValue.trim()
+                                                        ? "bg-white text-black hover:scale-105 hover:bg-accent hover:text-black"
+                                                        : "bg-gray-800 text-gray-600 cursor-not-allowed"
+                                                )}
+                                                disabled={!inputValue.trim()}
+                                            >
+                                                <Send size={18} className={inputValue.trim() ? "fill-current" : ""} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </>
+                        )}
                         <div className="text-center mt-3 text-[11px] text-gray-500 font-medium tracking-wide">
                             Sidera employs generative AI. Verification of astronomical data is recommended.
                         </div>
@@ -654,9 +948,9 @@ export function MainLayout() {
                             isSidebarOpen ? "md:left-[280px] w-full md:w-[calc(100%-280px)]" : "left-0 w-full"
                         )}
                     >
-                        <div className="pointer-events-auto px-6 py-3 rounded-full bg-black/50 backdrop-blur-xl border border-white/10 text-white text-sm flex items-center gap-3 shadow-2xl">
-                            <div className="w-2 h-2 rounded-full bg-accent animate-pulse"></div>
-                            <span>Constellation Mode Active</span>
+                        <div className="pointer-events-auto px-6 py-3 rounded-full bg-black/60 backdrop-blur-xl border border-amber-500/30 text-white text-sm flex items-center gap-3 shadow-[0_0_50px_rgba(245,158,11,0.5)]">
+                            <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></div>
+                            <span className="text-amber-100 font-medium">Constellation Mode Active</span>
                             <span className="text-gray-400 border-l border-white/20 pl-3 ml-1 mr-2">Press <span className="font-bold text-white">ESC</span> to return</span>
 
                             <button
@@ -666,8 +960,36 @@ export function MainLayout() {
                             >
                                 <Camera size={16} />
                             </button>
+
+                            {/* Complete Button in Constellation Mode */}
+                            {!isLocked && !isGuest && nodes.length > 0 && (
+                                <button
+                                    onClick={() => setIsEndModalOpen(true)}
+                                    className="p-1.5 rounded-full bg-amber-500/15 hover:bg-amber-500/30 text-amber-400 hover:text-amber-200 border border-amber-500/20 transition-colors ml-1"
+                                    title="별자리 완성"
+                                >
+                                    <span className="text-sm">✦</span>
+                                </button>
+                            )}
                         </div>
                     </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* End Conversation Modal */}
+            <AnimatePresence>
+                {isEndModalOpen && (
+                    <EndConversationModal
+                        isOpen={isEndModalOpen}
+                        onClose={() => setIsEndModalOpen(false)}
+                        projectId={activeProjectId}
+                        nodes={nodes}
+                        edges={edges}
+                        onComplete={async (name) => {
+                            const result = await completeProject(activeProjectId, name)
+                            return result
+                        }}
+                    />
                 )}
             </AnimatePresence>
         </div>

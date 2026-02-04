@@ -7,13 +7,20 @@ import clsx from 'clsx';
 export function TopicList() {
   const { nodes, flyToNode, viewMode, setViewMode, projects, activeProjectId, setActiveNode, refreshProjectData } = useStore();
   const currentProject = projects.find(p => p.id === activeProjectId);
+  const isLocked = currentProject?.status === 'completed';
   const [isOpen, setIsOpen] = useState(true);
 
   // Show ALL turns in Topic Flow (not filtered by importance)
   // Sort by creation order (oldest first)
   const tocNodes = [...nodes].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
-  if (nodes.length === 0) return null;
+  if (nodes.length === 0 || viewMode === 'observatory') return null;
+
+  // Determine button text based on mode and lock status
+  const getButtonText = () => {
+    if (viewMode === 'constellation') return 'Viewing';
+    return isLocked ? '별자리 감상' : 'View Stars';
+  };
 
   return (
     <motion.div
@@ -40,7 +47,7 @@ export function TopicList() {
             )}
           >
             <Telescope size={14} />
-            <span>{viewMode === 'constellation' ? 'Viewing' : 'View Stars'}</span>
+            <span>{getButtonText()}</span>
           </button>
         )}
 

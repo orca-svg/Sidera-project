@@ -5,15 +5,21 @@ export const useStore = create((set, get) => ({
   // --- State ---
   projects: [],        // Sidebar Project List
   activeProjectId: null,
+  completedImages: [],  // [{ projectId, constellationName, imageUrl }]
 
   nodes: [],           // Current Conversation Nodes (Stars)
   edges: [],           // Connections (optional visual)
   activeNode: null,    // Currently focused node (for camera comparison etc)
 
   isUniverseExpanded: false,
-  viewMode: 'chat', // 'chat' | 'constellation'
+  viewMode: 'chat', // 'chat' | 'constellation' | 'observatory'
   isLoading: false,
   isWarping: false, // Transition effect state
+
+  // Observatory Mode State
+  observatoryFocusedConstellation: null, // { projectId, position }
+  observatoryHoveredConstellation: null, // projectId
+
   settings: {
     temperature: 0.7,
     maxTokens: 1000,
@@ -25,6 +31,22 @@ export const useStore = create((set, get) => ({
   toggleUniverse: () => set(state => ({ isUniverseExpanded: !state.isUniverseExpanded })),
   setViewMode: (mode) => set({ viewMode: mode }),
   setIsWarping: (isWarping) => set({ isWarping }),
+
+  // Observatory Actions
+  setObservatoryFocusedConstellation: (data) => set({ observatoryFocusedConstellation: data }),
+  setObservatoryHoveredConstellation: (projectId) => set({ observatoryHoveredConstellation: projectId }),
+
+  // Enter constellation from Observatory
+  enterConstellationFromObservatory: async (projectId) => {
+    // 1. Activate the project
+    await get().setActiveProject(projectId);
+    // 2. Switch mode to chat view (as requested)
+    set({
+      viewMode: 'chat',
+      observatoryFocusedConstellation: null,
+      observatoryHoveredConstellation: null
+    });
+  },
 
   // --- Async Actions ---
 
@@ -40,7 +62,7 @@ export const useStore = create((set, get) => ({
         set({ viewMode: 'chat' });
       }
     } else {
-      set({ projects: [], nodes: [], activeProjectId: null });
+      set({ projects: [], nodes: [], activeProjectId: null, completedImages: [] });
     }
   },
 
@@ -54,11 +76,14 @@ export const useStore = create((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const res = await client.get('/projects');
-      // Map API response to UI format
+      // Map API response to UI format (including completion fields)
       const projects = res.data.map(p => ({
         id: p._id,
         title: p.name,
-        lastUpdated: p.updatedAt || p.createdAt
+        lastUpdated: p.updatedAt || p.createdAt,
+        status: p.status || 'active',
+        constellationName: p.constellationName || null,
+        constellationImageUrl: p.constellationImageUrl || null
       }));
       // Sort by latest msg? typically backend does this, or we sort here
       projects.sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated));
@@ -354,6 +379,10 @@ export const useStore = create((set, get) => ({
       const matches = res.data.map(n => ({
         id: n._id,
         question: n.question,
+        answer: n.answer,
+        shortTitle: n.shortTitle,
+        topicSummary: n.topicSummary,
+        keywords: n.keywords || [],
         position: n.position
       }));
       return matches;
@@ -415,6 +444,58 @@ export const useStore = create((set, get) => ({
 
   setActiveNode: (id) => set({ activeNode: id }),
 
+  // 9. Complete Project (End Conversation)
+  completeProject: async (projectId, constellationName) => {
+    try {
+      const res = await client.post(`/projects/${projectId}/complete`, { constellationName });
+      const { project, imageGenerated } = res.data;
+
+      console.log('[Store] completeProject result:', { imageGenerated, imageUrl: project.constellationImageUrl?.substring(0, 50) + '...' });
+
+      // Update local projects array
+      // Always add to completedImages if there's an imageUrl (placeholder or generated)
+      const hasImage = !!project.constellationImageUrl;
+      set(state => ({
+        projects: state.projects.map(p =>
+          p.id === projectId
+            ? {
+              ...p,
+              status: 'completed',
+              constellationName: project.constellationName,
+              constellationImageUrl: project.constellationImageUrl
+            }
+            : p
+        ),
+        completedImages: hasImage
+          ? [...state.completedImages, {
+            projectId,
+            constellationName: project.constellationName,
+            imageUrl: project.constellationImageUrl
+          }]
+          : state.completedImages
+      }));
+
+      return { success: true, imageGenerated: hasImage, imageUrl: project.constellationImageUrl };
+    } catch (err) {
+      console.error("[Store] completeProject Error:", err);
+      return { success: false, imageGenerated: false, error: err.response?.data?.message || err.message };
+    }
+  },
+
+  // 10. Fetch Completed Images (for background display)
+  fetchCompletedImages: async () => {
+    const { user } = get();
+    if (user?.isGuest) return; // Guests have no persistent data
+
+    try {
+      const res = await client.get('/projects/completed-images');
+      console.log('[Store] fetchCompletedImages response:', res.data?.length, 'images');
+      set({ completedImages: res.data });
+    } catch (err) {
+      console.error("[Store] fetchCompletedImages Error:", err);
+    }
+  },
+
   // Initial App Load
   initializeProject: async () => {
     const { user } = get();
@@ -426,6 +507,7 @@ export const useStore = create((set, get) => ({
     }
 
     await get().fetchProjects();
+    await get().fetchCompletedImages(); // Also fetch completed images for background
     const { projects } = get();
     if (projects.length === 0) {
       await get().createProject();

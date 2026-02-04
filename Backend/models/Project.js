@@ -21,6 +21,23 @@ const projectSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    status: {
+        type: String,
+        enum: ['active', 'completed'],
+        default: 'active'
+    },
+    completedAt: {
+        type: Date,
+        default: null
+    },
+    constellationName: {
+        type: String,
+        default: null
+    },
+    constellationImageUrl: {
+        type: String,
+        default: null
+    },
     createdAt: {
         type: Date,
         default: Date.now

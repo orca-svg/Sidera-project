@@ -14,9 +14,9 @@ export function WarpField({ count = 1000 }) {
       const t = Math.random() * 100
       const factor = 20 + Math.random() * 100
       const speed = 0.01 + Math.random() / 200
-      const xFactor = -50 + Math.random() * 100
-      const yFactor = -50 + Math.random() * 100
-      const zFactor = -50 + Math.random() * 100
+      const xFactor = -100 + Math.random() * 200
+      const yFactor = -100 + Math.random() * 200
+      const zFactor = -150 + Math.random() * 300
       temp.push({ t, factor, speed, xFactor, yFactor, zFactor, mx: 0, my: 0 })
     }
     return temp
@@ -54,7 +54,7 @@ export function WarpField({ count = 1000 }) {
 
       // Let's create a tunnel effect
       // x, y are relatively stable. z moves fast.
-      const z = (normalizedPos * 100) - 50 // -50 to 50 range
+      const z = (normalizedPos * 250) - 125 // -125 to 125 range for larger coverage
 
       // Stretch factor (Length of the star line)
       // When warping, stretch significantly in Z axis

@@ -20,6 +20,100 @@ router.get('/', async (req, res) => {
     }
 });
 
+// Get completed constellation data (for background display)
+// Returns nodes/edges for rendering actual constellation structures
+// MUST be before /:id routes to avoid routing conflict
+router.get('/completed-images', async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+
+        const completed = await Project.find({
+            userId: req.user._id,
+            status: 'completed'
+        }).select('constellationName constellationImageUrl completedAt');
+
+        // Fetch nodes and edges for each completed project
+        const results = await Promise.all(completed.map(async (p) => {
+            const [nodes, edges] = await Promise.all([
+                Node.find({ projectId: p._id }).select('position importance').lean(),
+                Edge.find({ projectId: p._id }).select('source target type').lean()
+            ]);
+
+            return {
+                projectId: p._id,
+                constellationName: p.constellationName,
+                imageUrl: p.constellationImageUrl,
+                completedAt: p.completedAt,
+                nodes: nodes.map(n => ({
+                    id: n._id,
+                    position: n.position,
+                    importance: n.importance
+                })),
+                edges: edges.map(e => ({
+                    source: e.source,
+                    target: e.target,
+                    type: e.type
+                }))
+            };
+        }));
+
+        console.log('[Projects] Returning', results.length, 'completed constellations for background');
+        res.json(results);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Complete a project (end conversation, generate constellation image)
+router.post('/:id/complete', async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+
+        const { constellationName } = req.body;
+        if (!constellationName?.trim()) {
+            return res.status(400).json({ message: 'Constellation name is required' });
+        }
+
+        const project = await Project.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!project) return res.status(404).json({ message: 'Project not found' });
+
+        // Check if already completed
+        if (project.status === 'completed') {
+            return res.status(409).json({ message: 'Project already completed', code: 'ALREADY_COMPLETED' });
+        }
+
+        // Must have at least one node to complete
+        const nodeCount = await Node.countDocuments({ projectId: req.params.id });
+        if (nodeCount === 0) {
+            return res.status(400).json({ message: 'Cannot complete a project with no nodes' });
+        }
+
+        // Generate constellation image (graceful degradation on failure)
+        const aiService = require('../services/aiService');
+        let imageUrl = null;
+        try {
+            imageUrl = await aiService.generateConstellationImage(constellationName.trim());
+        } catch (imgErr) {
+            console.error("[Complete] Image generation error:", imgErr.message);
+        }
+
+        // Update project
+        project.status = 'completed';
+        project.completedAt = new Date();
+        project.constellationName = constellationName.trim();
+        project.constellationImageUrl = imageUrl;
+        await project.save();
+
+        res.status(201).json({
+            project,
+            imageGenerated: !!imageUrl
+        });
+    } catch (err) {
+        console.error("[Complete] Error:", err);
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // Auto-Rename Project (AI Trigger)
 router.patch('/:id/auto-rename', async (req, res) => {
     try {
