@@ -397,8 +397,13 @@ router.post('/', async (req, res) => {
             console.log("[Sidera-IS] First Node: Always 5 stars");
         } else {
             // CASE B: SUBSEQUENT NODES (Standard Heuristics)
-            const text = (newNode.answer || "") + " " + (newNode.question || "");
-            finalImportanceScore = aiService.calculateImportanceMetrics(text, "assistant");
+            // IMPORTANT: Use QUESTION for heuristics (patterns match question forms, not answers)
+            const userQuestion = newNode.question || "";
+            finalImportanceScore = aiService.calculateImportanceMetrics(userQuestion, "user");
+
+            // Also consider the AI-returned score and take the MAX
+            const aiProvidedScore = aiResponse.importanceScore || 0;
+            finalImportanceScore = Math.max(finalImportanceScore, aiProvidedScore);
 
             if (rootNode) {
                 rootScore = rootNode.importanceScore;
@@ -414,6 +419,8 @@ router.post('/', async (req, res) => {
 
             newNode.importance = finalStarRating;
             newNode.importanceScore = finalImportanceScore;
+
+            console.log(`[chat.js] Question: "${userQuestion.substring(0, 30)}..." | Heuristic: ${finalImportanceScore} | Stars: ${finalStarRating}`);
         }
         // ----------------------------------------------
 

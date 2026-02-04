@@ -65,18 +65,27 @@
 
 ---
 
-## 4. 별 중요도 (Star Importance - Visual Magnitude)
+## 4. 중요도 평가 (Importance: Sidera-Intent)
 
-각 노드는 AI가 평가한 중요도에 따라 크기가 다른 별로 시각화됩니다.
+AI는 사용자의 **질문 의도(Inquiry Intent)**를 분석하여 중요도를 평가하고, 이를 별의 크기(Star Size)로 시각화합니다.
 
-### 점수 체계 (1-5점)
-- **5점 (Critical)**: 핵심 개념, 질문에 대한 직접적이고 중요한 답변. (가장 크고 밝음)
-- **3점 (Normal)**: 일반적인 추가 설명이나 후속 질문.
-- **1점 (Trivial)**: 단순한 잡담이나 문맥과 무관한 질문. (가장 작고 희미함)
+### 평가 기준 (Question Type)
 
-### 계산 방식
-- AI가 답변의 정보 밀도와 사용자 의도 적합성을 분석하여 `importanceScore`를 산출합니다.
-- 이 점수는 `Node` 데이터에 저장되며, Three.js 렌더링 시 별의 `size` 속성에 직접 반영됩니다.
+| 등급 | 별점 (Star) | 질문 유형 | 설명 | 예시 |
+|:---:|:---:|:---|:---|:---|
+| **Critical** | ⭐⭐⭐⭐⭐ | **Conceptual Inquiry** | 본질적 개념, 정의, 원리를 묻는 질문 | "양자역학이란?", "슈뢰딩거 방정식이 뭐야?" |
+| **High** | ⭐⭐⭐⭐ | **Strategic / Deep Dive** | 구체적 방법론, 전략, 비교 분석 | "React 최적화 방법", "A vs B 비교" |
+| **Normal** | ⭐⭐⭐ | **Contextual** | 단순 사실 확인, 코드 요청, 현상태 점검 | "날씨 어때?", "이 코드 보여줘" |
+| **Low** | ⭐⭐ | **Phatic** | 단순 인사, 짧은 리액션 | "안녕", "알겠어", "ㅇㅇ" |
+
+### 점수 산출 (Heuristics)
+
+1. **인사말 감점 (Phatic Penalty)**: `안녕`, `하이`, `ㅋㅋ`, `ㅇㅇ` 등으로 시작하면 즉시 **0.15점** 반환
+2. **개념 질문 패턴**: `정의`, `무엇`, `뭐야`, `뭔가`, `방정식`, `이론`, `개념` 등 → **0.85점**
+3. **전략 질문 패턴**: `방법`, `어떻게`, `비교`, `최적화` 등 → **0.7점**
+4. **학술 용어 보너스**: `슈뢰딩거`, `양자`, `알고리즘`, `데이터베이스` 등 감지 시 **+0.15점**
+5. **가중치 배분**: Intent(70%) + Info Density(20%) + Structure(10%)
+
 
 ---
 
@@ -330,3 +339,82 @@ fetchCompletedImages()                          // GET /projects/completed-image
 - `Frontend/src/components/layout/ShareModal.jsx`: 공유 모달 컴포넌트
 - `Frontend/src/components/layout/MainLayout.jsx`: `handleCapture` 함수, 모달 상태 관리
 
+---
+
+## 11. 게스트 모드 (Guest Mode)
+
+로그인 없이 Sidera를 체험할 수 있는 모드입니다. 대화 내용은 **브라우저 메모리에만** 저장되며, 새로고침 시 사라집니다.
+
+### 작동 방식
+| 구분 | 일반 모드 | 게스트 모드 |
+|------|-----------|-------------|
+| 데이터 저장 | MongoDB | 클라이언트 메모리 |
+| 노드 ID | MongoDB `_id` | `guest-{timestamp}` |
+| 프로젝트 | 선택/생성 필요 | 자동 (`guest-session`) |
+| 지속성 | 영구 보존 | 세션 종료 시 삭제 |
+
+### API 호출 차이
+```json
+// Request Body
+{
+  "message": "사용자 질문",
+  "isGuest": true,
+  "history": [ /* 기존 노드 배열 (클라이언트 관리) */ ]
+}
+```
+
+### 관련 파일
+- `Backend/routes/chat.js`: `isGuest` 분기 처리 (Line 144-267)
+- `Frontend/src/components/layout/MainLayout.jsx`: `isGuestMode` 상태
+
+---
+
+## 12. 관측소 뷰 (Observatory View)
+
+완료된 모든 별자리를 한눈에 볼 수 있는 갤러리 모드입니다.
+
+### 진입 조건
+- 최소 1개 이상의 **완료된 프로젝트**가 있어야 접근 가능
+- 헤더의 **🔭 관측소** 버튼 클릭
+
+### 레이아웃 (Spiral)
+```javascript
+// 나선형 배치 공식
+angle = index * 0.5 (radians)
+radius = 15 + index * 5
+position = { x: radius * cos(angle), y: radius * sin(angle), z: -20 }
+```
+
+### 시각적 특징
+| 요소 | 설명 |
+|------|------|
+| **별자리** | 축소된 3D 미니 별자리 (클릭 시 해당 프로젝트로 이동) |
+| **이름표** | 각 별자리 아래 `constellationName` 표시 |
+| **배경** | `Stars` 컴포넌트로 은하수 효과 |
+
+### 관련 파일
+- `Frontend/src/components/canvas/Universe.jsx`: `ObservatoryView` 컴포넌트
+
+---
+
+## 13. 설정 및 데이터 내보내기 (Settings Modal)
+
+### 데이터 내보내기 (Export)
+
+| 포맷 | 설명 |
+|------|------|
+| **JSON** | 노드 배열을 그대로 다운로드 (개발자/백업용) |
+| **Markdown** | 대화 형식으로 포맷팅된 `.md` 파일 (문서 공유용) |
+
+### Markdown 포맷 예시
+```markdown
+# [프로젝트 이름]
+
+## 💬 Conversation
+
+**You**: 사용자 질문 내용
+**Sidera**: AI 답변 내용
+```
+
+### 관련 파일
+- `Frontend/src/components/layout/SettingsModal.jsx`

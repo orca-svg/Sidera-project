@@ -68,30 +68,31 @@ async function generateResponse(prompt, context = "", settings = {}) {
       [Context] ${context || "None"}
 
       Task:
-      1. Analyze user input and provide a helpful response in **Korean** (key: "answer").
-      2. **English Topic (Vector Key)**: Extract core entities and categories as a comma-separated list. 
+      1. **Analyze User Intent** (Classification):
+         - **Conceptual Inquiry**: Asking for definitions, origins, core principles (e.g., "What is love?", "Define Redux"). -> **5 Stars (0.9-1.0)**
+         - **Strategic/Deep Dive**: Asking for methods, comparisons, complex "How-to" (e.g., "How to optimize?", "Vue vs React"). -> **4 Stars (0.7-0.9)**
+         - **Contextual/Operational**: Fact-checking, status checks, code snippets (e.g., "Is it raining?", "Show code"). -> **3 Stars (0.5-0.7)**
+         - **Phatic/Trivial**: Greetings, short reactions, simple acknowledge (e.g., "Hi", "Ok", "Thanks"). -> **1-2 Stars (0.1-0.4)**
+
+      2. Provide a helpful response in **Korean** (key: "answer").
+      
+      3. **English Topic (Vector Key)**: Extract core entities and categories.
          - Format: "Entity1, Entity2, Category"
-         - Rule: NO sentences. NO verbs. NO "User asked about".
-         - Example: "Day6, JYP Entertainment, K-pop Band" (Good)
-         - Example: "SQL, Database, Query Language" (Good)
-         - Example: "Food recommendations, KAIST area, Bakery" (Good for local query)
-      3. **Short Title (UI)**: A very short Korean title (max 10 chars) for the sidebar/star label. (key: "shortTitle")
-      4. **Summary (Memory)**: Summarize the KEY FACTS from your answer in one Korean sentence.
-         - Rule: Do NOT start with "User asked..." or "The user wants...". Just state the fact.
-         - Example: "Day6는 JYP 소속의 4인조 밴드이다."
-      5. **Importance**: Rate the semantic depth/importance (0.0 to 1.0) and Star Count (1-5).
-         - Note: The first message in a project is always the Anchor (1.0/5★), but please evaluate this normally as well.
+ 
+      4. **Short Title (UI)**: A very short Korean title (max 10 chars). (key: "shortTitle")
+      
+      5. **Summary (Memory)**: Summarize KEY FACTS in one Korean sentence.
 
       User Input: "${prompt}"
       
       Respond STRICTLY in JSON:
       {
         "answer": "...",
-        "englishTopic": "Entity1, Entity2, Category", 
+        "questionType": "Conceptual|Strategic|Contextual|Phatic",
+        "englishTopic": "...", 
         "shortTitle": "...",
         "summary": "...",
-        "importanceScore": 0.0-1.0,
-        "importance": 1-5
+        "importanceScore": 0.0-1.0
       }
     `;
 
@@ -138,16 +139,28 @@ async function generateResponse(prompt, context = "", settings = {}) {
         if (!Array.isArray(parsed.keywords)) parsed.keywords = [];
         parsed.keywords = parsed.keywords.slice(0, 5).map(k => String(k).substring(0, 15));
 
-        // Ensure numeric importance
+        // Ensure numeric importance from LLM
         let rawScore = parseFloat(parsed.importanceScore);
         if (isNaN(rawScore)) rawScore = 0.5;
-        parsed.importanceScore = rawScore;
-        const SideraConfig = require('./aiService').SideraConfig || { IS: { percentiles: { p5: 0.9, p4: 0.8, p3: 0.5, p2: 0.2 } } };
-        // Simple star calc directly if config issues
-        if (rawScore >= 0.9) parsed.importance = 5;
-        else if (rawScore >= 0.8) parsed.importance = 4;
-        else if (rawScore >= 0.5) parsed.importance = 3;
-        else if (rawScore >= 0.2) parsed.importance = 2;
+
+        // --- APPLY HEURISTICS (Sidera-Intent) ---
+        // Calculate heuristic score based on regex patterns (Question Type)
+        const heuristicScore = calculateImportanceMetrics(prompt, "user");
+
+        // Final Score = Max(LLM Score, Heuristic Score)
+        // This ensures that if heuristics detect a "Critical Question" (0.85+), it overrides a low LLM score.
+        parsed.importanceScore = Math.max(rawScore, heuristicScore);
+
+        console.log(`[Importance] Text: "${prompt.substring(0, 20)}..." | LLM: ${rawScore} | Heuristic: ${heuristicScore} | Final: ${parsed.importanceScore}`);
+
+        // Star calculation is now handled purely by visualizer based on score distribution
+        // But we provide a default mapping for direct UI usage if needed
+        const finalScore = parsed.importanceScore; // Use the MAX value
+
+        if (finalScore >= 0.9) parsed.importance = 5;
+        else if (finalScore >= 0.7) parsed.importance = 4;
+        else if (finalScore >= 0.5) parsed.importance = 3;
+        else if (finalScore >= 0.2) parsed.importance = 2;
         else parsed.importance = 1;
 
         return parsed;
@@ -183,46 +196,47 @@ const SideraConfig = {
 };
 
 // --- HELPER METRICS (Heuristics) ---
+// --- HELPER METRICS (Heuristics for Sidera-Intent) ---
 function calculateImportanceMetrics(text, role) {
     if (!text) return 0;
-    // ...
 
-    // (A) Info Score: Facts, Numbers, Proper Nouns, Length
-    const numberCount = (text.match(/\d+/g) || []).length;
-    const quoteCount = (text.match(/"[^"]*"/g) || []).length;
-    const lengthScore = Math.min(text.length / 300, 1); // Lowered from 500 for more sensitivity
-    const hasSpecialChars = /[A-Z0-9$€£%]/.test(text) ? 0.2 : 0;
-    const hasKoreanContent = /[가-힣]{10,}/.test(text) ? 0.3 : 0; // Korean content bonus
-    const infoScore = Math.min((numberCount * 0.15) + (quoteCount * 0.25) + lengthScore + hasSpecialChars + hasKoreanContent, 1);
-
-    // (B) Func Score: Speech Acts - More generous detection
-    const funcPatterns = {
-        decision: /(결정|확정|합의|결론|Action|제안|동의|해야|됩니다|입니다)/i,
-        question: /\?|까\?|나요\?|왜|무엇|어떻게|어디|누가|언제/,
-        request: /(부탁|요청|해주세요|해줘|알려)/,
-        explanation: /(때문|이유|원리|방법|과정)/
-    };
-    let funcScore = 0.4; // Higher base
-    if (funcPatterns.decision.test(text)) funcScore += 0.35;
-    if (funcPatterns.question.test(text)) funcScore += 0.25;
-    if (funcPatterns.request.test(text)) funcScore += 0.15;
-    if (funcPatterns.explanation.test(text)) funcScore += 0.2;
-    funcScore = Math.min(funcScore, 1);
-
-    // (C) Struct Score: Centrality / Reference
-    const refCount = (text.match(/@|#|이전|아까|앞서|관련/g) || []).length;
-    const structScore = Math.min(0.3 + (refCount * 0.2), 1); // Higher base
-
-    // Weighted Sum with boost
-    let finalScore = (infoScore * SideraConfig.IS.weights.info) +
-        (structScore * SideraConfig.IS.weights.struct) +
-        (funcScore * SideraConfig.IS.weights.func);
-
-    // Apply minimum floor for non-trivial content
-    if (text.length > 50) {
-        finalScore = Math.max(finalScore, 0.35); // Minimum score for substantial content
+    // 0. Phatic (Greeting/Trivial) Detection - PENALIZE
+    const phaticPatterns = /(^안녕|^하이|^헬로|^ㅋㅋ|^ㅎㅎ|^ㅇㅇ|^오케이|^알겠어$|^고마워$|^감사$)/i;
+    if (phaticPatterns.test(text.trim())) {
+        return 0.15; // Very low score for greetings/reactions
     }
 
+    // 1. Inquiry Depth Score (Question Quality)
+    const inquiryPatterns = {
+        // Extended: Added colloquial "뭐", academic terms
+        concept: /(정의|무엇|뭐야|뭔가|뭐지|뭔데|뜻|의미|유래|기원|원리|방정식|이론|법칙|개념|Definition|What is|Explain)/i,
+        strategy: /(방법|어떻게|전략|효율|비교|차이|최적화|설계|구현|How to|Compare|Strategy|Optimize)/i,
+        context: /(확인|상태|코드|보여|줘|언제|누가|어디|Check|Status|Show)/i
+    };
+
+    let inquiryScore = 0.3; // Base
+    if (inquiryPatterns.concept.test(text)) inquiryScore = 0.85;     // Conceptual = High
+    else if (inquiryPatterns.strategy.test(text)) inquiryScore = 0.7; // Strategic = Medium-High
+    else if (inquiryPatterns.context.test(text)) inquiryScore = 0.5;  // Contextual = Medium
+
+    // 2. Academic/Term Bonus (Boost for technical language)
+    const academicTerms = /(물리|수학|화학|생물|역학|양자|상대성|슈뢰딩거|아인슈타인|뉴턴|알고리즘|자료구조|데이터베이스)/i;
+    if (academicTerms.test(text)) inquiryScore = Math.min(inquiryScore + 0.15, 1.0);
+
+    // 3. Info Density (Supporting Metric) - Reduced weight
+    const lengthScore = Math.min(text.length / 500, 1);
+    const hasSpecialChars = /[A-Z0-9$€£%]/.test(text) ? 0.1 : 0;
+    const infoScore = (lengthScore * 0.7) + (hasSpecialChars * 0.3);
+
+    // 4. Structural Utility
+    const refCount = (text.match(/@|#|이전|앞서/g) || []).length;
+    const structScore = Math.min(refCount * 0.2, 0.4);
+
+    // Final Weighted Sum
+    // Intent (70%) + Info (20%) + Structure (10%)
+    let finalScore = (inquiryScore * 0.7) + (infoScore * 0.2) + (structScore * 0.1);
+
+    // Cap at 1.0
     return parseFloat(Math.min(finalScore, 1).toFixed(3));
 }
 
