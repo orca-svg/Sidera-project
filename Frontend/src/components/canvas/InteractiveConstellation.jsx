@@ -72,6 +72,8 @@ export function InteractiveConstellation({
 
   // ... existing code below (line 73+)
 
+  const [isNearby, setIsNearby] = useState(false)
+
   // Base scale
   const baseScale = 0.6
   const targetScale = isFocused ? 0.8 : (isHovered ? 0.7 : 0.6)
@@ -85,10 +87,52 @@ export function InteractiveConstellation({
       if (!isFocused) {
         groupRef.current.rotation.y += delta * 0.05
       }
+
+      // Proximity Check for Auto-Label
+      // Calculate distance to this constellation
+      const currentPos = new THREE.Vector3(...offset)
+      const dist = state.camera.position.distanceTo(currentPos)
+
+      // Hysteresis to prevent flickering
+      // Increased range significantly as requested (Show earlier)
+      if (dist < 120 && !isNearby) setIsNearby(true)
+      if (dist > 130 && isNearby) setIsNearby(false)
+
+      // Dynamic Label Offset Logic (UX Improvement)
+      // Anchor: Bottom of constellation (minY)
+      // Offset: Pixel distance decreases as we get further (Counter-intuitive but correct for screen space)
+      // Close (Zoomed In): Star is visually HUGE -> Need LARGE offset to clear it.
+      // Far (Zoomed Out): Star is tiny -> Need SMALL offset to keep label connected.
+      if (labelRef.current && (isNearby || isHovered || isFocused)) {
+        // Calculate closeness (0 to 1, where 1 is "Very Close")
+        // Dist 20 (Close) -> ratio 1.0
+        // Dist 120 (Far) -> ratio 0.0
+        const closeness = Math.max(0, Math.min(1, 1 - (dist - 20) / 100))
+
+        // Base offset (Far): 30px
+        // Extra offset (Close): +50px
+        // Result: Far=30px, Close=80px
+        const pixelOffset = 30 + (closeness * 50)
+
+        labelRef.current.style.transform = `translateY(${pixelOffset}px)`
+      }
     }
   })
 
+  /* Restore missing rendering logic */
+  const labelRef = useRef()
   const nodeMap = useMemo(() => new Map(nodes.map(n => [n.id.toString(), n])), [nodes])
+
+  // Find visual bottom of the constellation
+  const minY = useMemo(() => {
+    if (!nodes.length) return 0
+    // Get min Y from all nodes
+    return Math.min(...nodes.map(n => {
+      const pos = n.position
+      const y = Array.isArray(pos) ? pos[1] : (pos.y ?? 0)
+      return y
+    }))
+  }, [nodes])
 
   // Local position helper (relative to group 0,0,0)
   const getPosition = (pos) => {
@@ -145,19 +189,28 @@ export function InteractiveConstellation({
         />
       ))}
 
-      {/* Label (Only when hovered or focused) */}
-      {(isHovered || isFocused) && (
-        <Html position={[0, -5, 0]} center style={{ pointerEvents: 'none' }}>
-          <div className={clsx(
-            "px-4 py-2 rounded-full border backdrop-blur-md text-sm font-medium whitespace-nowrap transition-all duration-300",
-            isFocused
-              ? "bg-purple-900/80 border-purple-400 text-purple-100 shadow-[0_0_20px_rgba(168,85,247,0.5)] scale-110"
-              : "bg-black/80 border-white/20 text-gray-200"
-          )}>
-            {title || constellationName || "Untitled Star Map"}
+      {/* Label (Hovered, Focused, or Proximity) */}
+      {(isHovered || isFocused || isNearby) && (
+        <Html position={[0, minY, 0]} center style={{ pointerEvents: 'none' }}>
+          <div
+            ref={labelRef}
+            className="transition-transform duration-75"
+            style={{ transform: 'translateY(20px)' }} // Positive Y goes down in CSS flow naturally? No, standard CSS: Y increases downwards.
+          // Wait, Html center prop centers the div on the 3D point.
+          // Inside the div, translateY > 0 moves it DOWN.
+          >
+            <div className={clsx(
+              "px-4 py-2 rounded-full border backdrop-blur-md text-sm font-medium whitespace-nowrap transition-all duration-300",
+              isFocused
+                ? "bg-purple-900/80 border-purple-400 text-purple-100 shadow-[0_0_20px_rgba(168,85,247,0.5)] scale-110"
+                : "bg-black/80 border-white/20 text-gray-200"
+            )}>
+              {title || constellationName || "Untitled Star Map"}
+            </div>
           </div>
         </Html>
       )}
     </group>
   )
+
 }

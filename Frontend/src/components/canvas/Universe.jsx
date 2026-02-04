@@ -338,8 +338,30 @@ export function Universe({ isInteractive = true }) {
                     true
                 )
             } else {
-                // Overview Mode
-                cameraControlsRef.current.setLookAt(0, 0, 200, 0, 0, 0, true)
+                // Overview Mode - Dynamic Fit using Bounding Box
+                const validConstellations = useStore.getState().completedImages.filter(item => item.nodes?.length > 0)
+
+                if (validConstellations.length > 0) {
+                    let maxExtent = 0
+
+                    // Calculate positions and find max distance from origin
+                    validConstellations.forEach((_, index) => {
+                        // Re-use the same spiral logic to predict position
+                        // Spiral: Radius = 30 + index * 15
+                        const radius = 30 + index * 15
+                        const indexZ = 20 + (index * 5)
+                        const dist = Math.max(radius, indexZ) // simplified max extent
+                        if (dist > maxExtent) maxExtent = dist
+                    })
+
+                    // Fit to FOV (60 deg -> tan(30) = 0.577)
+                    // Distance = Size / tan(30) approx Size * 1.73
+                    // Adjusted: 1.5 multiplier (was 2.0) for tighter fit as requested
+                    const targetZ = Math.max(80, maxExtent * 1.5)
+                    cameraControlsRef.current.setLookAt(0, 0, targetZ, 0, 0, 0, true)
+                } else {
+                    cameraControlsRef.current.setLookAt(0, 0, 200, 0, 0, 0, true)
+                }
             }
         } else if (viewMode === 'constellation' && focusTarget) {
             const [x, y, z] = focusTarget.position
