@@ -330,8 +330,10 @@ export const useStore = create((set, get) => ({
       const matches = res.data.map(n => ({
         id: n._id,
         question: n.question,
+        answer: n.answer,
         shortTitle: n.shortTitle,
         topicSummary: n.topicSummary,
+        keywords: n.keywords || [],
         position: n.position
       }));
       return matches;

@@ -400,6 +400,41 @@ export function MainLayout() {
                                             <div className="space-y-1">
                                                 {searchResults.nodes.map((node, idx) => {
                                                     const resultIndex = (searchResults.projects?.length || 0) + idx;
+
+                                                    // Determine which field matched and show it accordingly
+                                                    const query = searchQuery.toLowerCase();
+                                                    let matchType = 'topic';
+                                                    let displayText = node.shortTitle || node.topicSummary || node.question;
+
+                                                    if (node.question?.toLowerCase().includes(query)) {
+                                                        matchType = 'question';
+                                                        displayText = node.question;
+                                                    } else if (node.answer?.toLowerCase().includes(query)) {
+                                                        matchType = 'answer';
+                                                        // Show snippet around the match
+                                                        const matchIndex = node.answer.toLowerCase().indexOf(query);
+                                                        const start = Math.max(0, matchIndex - 20);
+                                                        const end = Math.min(node.answer.length, matchIndex + query.length + 40);
+                                                        displayText = (start > 0 ? '...' : '') + node.answer.slice(start, end) + (end < node.answer.length ? '...' : '');
+                                                    } else if (node.keywords?.some(k => k.toLowerCase().includes(query))) {
+                                                        matchType = 'keyword';
+                                                        displayText = node.shortTitle || node.topicSummary || node.question;
+                                                    }
+
+                                                    // Badge colors based on match type
+                                                    const badgeStyles = {
+                                                        question: 'bg-blue-500/20 text-blue-400',
+                                                        answer: 'bg-green-500/20 text-green-400',
+                                                        keyword: 'bg-yellow-500/20 text-yellow-400',
+                                                        topic: 'bg-accent/20 text-accent'
+                                                    };
+                                                    const badgeLabels = {
+                                                        question: 'Q',
+                                                        answer: 'A',
+                                                        keyword: '#',
+                                                        topic: '★'
+                                                    };
+
                                                     return (
                                                         <button
                                                             key={node.id}
@@ -416,9 +451,16 @@ export function MainLayout() {
                                                                     : "hover:bg-white/5"
                                                             )}
                                                         >
-                                                            <Sparkles size={14} className="mt-0.5 text-accent shrink-0" />
+                                                            <span className={clsx("shrink-0 w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center", badgeStyles[matchType])}>
+                                                                {badgeLabels[matchType]}
+                                                            </span>
                                                             <div className="flex-1 min-w-0">
-                                                                <div className="truncate text-gray-200">{node.shortTitle || node.topicSummary || node.question}</div>
+                                                                <div className="truncate text-gray-200">{displayText}</div>
+                                                                {matchType !== 'topic' && node.topicSummary && (
+                                                                    <div className="text-[10px] text-gray-500 truncate mt-0.5">
+                                                                        📍 {node.topicSummary}
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         </button>
                                                     );
