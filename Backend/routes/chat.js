@@ -313,12 +313,18 @@ router.post('/', async (req, res) => {
 
         const aiResponse = await aiService.generateResponse(message, finalContext, settings);
 
+        // DEBUG: Trace AI Output
+        console.log("[AI Response] Answer Preview:", aiResponse.answer.substring(0, 50));
+        console.log("[AI Response] Topic Summary:", aiResponse.topicSummary);
+
         // D. Create New Node Instance (Initial)
         // STRICT SANITIZATION for topicSummary to prevent layout breaks
         let cleanTopicSummary = aiResponse.topicSummary;
         if (!cleanTopicSummary || cleanTopicSummary.length > 30) cleanTopicSummary = aiResponse.shortTitle;
         if (!cleanTopicSummary || cleanTopicSummary.length > 30) cleanTopicSummary = (aiResponse.keywords && aiResponse.keywords[0]) || "Topic";
         if (cleanTopicSummary && cleanTopicSummary.length > 30) cleanTopicSummary = cleanTopicSummary.substring(0, 30) + "..";
+
+        console.log("[Node Creation] Clean Topic Summary:", cleanTopicSummary);
 
         const newNode = new Node({
             projectId,
@@ -333,8 +339,8 @@ router.post('/', async (req, res) => {
             starLabel: aiResponse.starLabel || aiResponse.shortTitle || ""
         });
 
-        // Generate Embeddings for the new node
-        newNode.summaryEmbedding = await aiService.getEmbedding(newNode.summary);
+        // Generate Embeddings for the new node (Use topicSummary for better semantic separation)
+        newNode.summaryEmbedding = await aiService.getEmbedding(newNode.topicSummary || newNode.summary);
         newNode.fullEmbedding = await aiService.getEmbedding(newNode.question + " " + newNode.answer);
 
         // --- SIDERA-IS v2.1: Weighted Anchor Logic ---
@@ -474,6 +480,11 @@ router.post('/', async (req, res) => {
                 if (sim > 0.5) {
                     console.log(`[Similarity Check] New: "${newNode.topicSummary}" vs Cand: "${cand.topicSummary || 'Unknown'}" (ID: ${cand._id})`);
                     console.log(`[Similarity Check] Score: ${sim.toFixed(4)}`);
+                    if (newNode.summaryEmbedding && cand.summaryEmbedding) {
+                        const v1 = newNode.summaryEmbedding.slice(0, 5).map(n => n.toFixed(3));
+                        const v2 = cand.summaryEmbedding.slice(0, 5).map(n => n.toFixed(3));
+                        console.log(`[Vectors] New: [${v1}], Cand: [${v2}]`);
+                    }
                 }
 
                 const timeDiff = Math.abs(index); // Just use index as proxy for 'turn distance'

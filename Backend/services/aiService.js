@@ -150,11 +150,8 @@ async function getEmbedding(text) {
         // DEBUG LOG
         console.log(`[Embedding Input] "${text.substring(0, 40)}..." (len: ${text.length})`);
 
-        // Specify taskType for better separation
-        const result = await embeddingModel.embedContent({
-            content: { role: "user", parts: [{ text }] },
-            taskType: "SEMANTIC_SIMILARITY"
-        });
+        // Specify taskType caused collapse for short text. Reverting to standard.
+        const result = await embeddingModel.embedContent(text);
         return result.embedding.values;
     } catch (error) {
         console.error("[Embedding Error]", error);
@@ -172,24 +169,29 @@ async function generateResponse(prompt, context = "", settings = {}) {
       [Context] ${context || "None"}
 
       Task:
-      1. Analyze user input and provide a helpful response in **Korean**.
-      2. Extract 1-3 short noun keywords (Korean).
-      3. Summarize the interaction in one Korean sentence.
-      4. Create a very short title (max 10 Korean characters) for sidebar display.
-      5. Create a star label (max 15 Korean characters, preferably 2 words) for constellation view.
+      1. Analyze **current** user input and provide a helpful response in **Korean**.
+      2. If the user changes topic, **FOLLOW THE NEW TOPIC**. Do not get stuck on previous context.
+      3. Extract 1-3 short noun keywords (Korean) from **this specific response**.
+      4. Summarize **this current interaction only** in one Korean sentence.
+      5. Create a very short title (max 10 Korean characters) for sidebar display.
+      6. Create a star label (max 15 Korean characters, preferably 2 words) for constellation view.
 
-      User Input: "${prompt}"
+      **Current** User Input: "${prompt}"
       
-      Respond STRICTLY in JSON:
+      Respond STRICTLY in JSON details based on **THIS** turn:
       {
         "answer": "Response...",
-        "summary": "Full summary sentence...",
+        "summary": "Summary of this specific turn...",
         "keywords": ["kw1", "kw2"],
-        "topicSummary": "핵심 주제 (명사형, 5단어 이내, 예: '블랙홀의 구조', '제육볶음 레시피')",
+        "topicSummary": "이번 턴의 핵심 주제 (명사형, 5단어 이내, 예: '블랙홀의 구조', '제육볶음 레시피')",
         "shortTitle": "제목(10자)",
         "starLabel": "별 라벨"
       }
     `;
+
+        // DEBUG: Log the full prompt to check if Input matches Context
+        console.log("[Prompt Debug] User Input in Prompt:", prompt);
+        // console.log("[Prompt Debug] Full Prompt Preview:", fullPrompt.substring(0, 500) + "..."); 
 
         const generationConfig = {
             temperature: settings.temperature || 0.7,
