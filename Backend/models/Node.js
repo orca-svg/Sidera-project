@@ -30,8 +30,18 @@ const nodeSchema = new mongoose.Schema({
         max: 5,
         default: 2
     },
+    importanceScore: {
+        type: Number,
+        default: 0
+    },
     topicSummary: {
         type: String // Short summary for Topic Flow
+    },
+    shortTitle: {
+        type: String // Ultra-short title (~10 chars) for sidebar
+    },
+    starLabel: {
+        type: String // Short label (~15 chars) for constellation view
     },
     isBookmarked: {
         type: Boolean,

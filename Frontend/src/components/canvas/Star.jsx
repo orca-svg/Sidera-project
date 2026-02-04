@@ -12,7 +12,7 @@ export function Star({ position, node, isSelected, onClick }) {
     const { viewMode } = useStore()
 
     // Destructure node properties
-    const { importance, keywords, topicSummary } = node
+    const { importance, keywords, topicSummary, starLabel } = node
 
     // 1. Determine "Class" based on Importance
     // 1. Granular Sidera-IS Visual Mapping (1-5)
@@ -122,33 +122,19 @@ export function Star({ position, node, isSelected, onClick }) {
                     */}
                     <div className="flex flex-col-reverse items-center transform -translate-y-[50%] pb-2">
 
-                        {/* 1. Connection Line (Grows Upwards) - Adjusted to h-10 (intermediate) */}
+                        {/* 1. Connection Line (Grows Upwards) */}
                         <div className={clsx("w-px h-10 transition-all duration-300", lineColor, lineShadow)} />
 
-                        {/* 2. Info Card (Glass Panel) - Adjusted Padding */}
+                        {/* 2. Info Card (Glass Panel) */}
                         <div className={clsx(
                             "mb-1 px-3 py-1.5 rounded-lg border backdrop-blur-md shadow-xl transition-all duration-300 pointer-events-auto flex items-center gap-2",
                             "bg-black/80 text-sm whitespace-nowrap",
                             borderColor, shadowColor
                         )}>
                             <span className={clsx("font-bold animate-pulse", themeColor)}>●</span>
-                            <span className="text-gray-100 font-mono tracking-wide">
-                                {topicSummary || (keywords && keywords[0]) || "NODE"}
+                            <span className="text-gray-100 font-mono tracking-wide text-center leading-tight">
+                                {topicSummary || starLabel || (keywords && keywords[0]) || "NODE"}
                             </span>
-
-                            {/** Bookmark Toggle Button **/}
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    useStore.getState().toggleBookmark(node.id);
-                                }}
-                                className={clsx(
-                                    "ml-2 p-1 rounded hover:bg-white/20 transition-colors",
-                                    node.isBookmarked ? "text-yellow-400" : "text-gray-500 hover:text-white"
-                                )}
-                            >
-                                <Bookmark size={14} className={node.isBookmarked ? "fill-current" : ""} />
-                            </button>
                         </div>
 
                     </div>

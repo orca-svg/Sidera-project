@@ -349,7 +349,7 @@ export function MainLayout() {
                                                 ) : (
                                                     <div className="flex-1 min-w-0">
                                                         <div className={clsx("truncate", activeProjectId === project.id ? "text-accent font-medium" : "text-gray-400 group-hover:text-gray-200")}>
-                                                            {project.title}
+                                                            {project.title || "New Project"}
                                                         </div>
                                                         <div className="text-[10px] text-gray-600 truncate">
                                                             {new Date(project.lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
