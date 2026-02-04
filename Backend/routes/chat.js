@@ -502,8 +502,9 @@ router.post('/', async (req, res) => {
             });
 
             // 3. Select EXPLICIT Edge - Based on HIGH semantic similarity (docs: 0.75+)
-            // If semantic similarity is high, the topics are strongly related (e.g., 블랙홀 ↔ 화이트홀 = 우주)
-            const SEMANTIC_EXPLICIT_THRESHOLD = 0.75; // Raised to 0.75 to prevent unrelated connections
+            // 3. Select EXPLICIT Edge - Based on HIGH semantic similarity
+            // Model (text-embedding-004) has compressed range: Unrelated ~0.96, Related ~0.99
+            const SEMANTIC_EXPLICIT_THRESHOLD = 0.990; // Strict match for Solid Line
 
             const explicitCandidates = scoredCandidates
                 .filter(c => {
@@ -536,7 +537,7 @@ router.post('/', async (req, res) => {
 
             // 4. Select IMPLICIT Edges - Lower semantic similarity but still related
             const connectedIds = newEdges.map(e => e.source.toString()); // temporal/explicit sources
-            const SEMANTIC_IMPLICIT_THRESHOLD = 0.35;
+            const SEMANTIC_IMPLICIT_THRESHOLD = 0.970; // Filter noise (< 0.97)
 
             const implicitCandidates = scoredCandidates
                 .filter(c => !connectedIds.includes(c.node._id.toString())) // Don't duplicate

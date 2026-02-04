@@ -263,7 +263,10 @@ export function MainLayout() {
                     </div>
 
                     <button
-                        onClick={createProject}
+                        onClick={async () => {
+                            await createProject();
+                            setViewMode('chat');
+                        }}
                         className="w-full h-10 flex items-center gap-3 px-4 bg-gray-800 hover:bg-gray-700 text-gray-200 hover:text-white rounded-full transition-all duration-200 border border-transparent hover:border-accent/30 group shadow-lg"
                     >
                         <Plus size={18} className="text-gray-400 group-hover:text-accent transition-colors" />
