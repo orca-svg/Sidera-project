@@ -1,16 +1,18 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Loader2 } from 'lucide-react'
+import { X, Loader2, AlertCircle, Cpu } from 'lucide-react'
 
 /**
  * EndConversationModal - Modal for completing a constellation
  * 3-stage flow: input → generating → success
+ * Supports local GPU-based AI image generation
  */
 export function EndConversationModal({ isOpen, onClose, projectId, nodes, edges, onComplete }) {
   const [name, setName] = useState('')
   const [stage, setStage] = useState('input') // 'input' | 'generating' | 'success'
   const [resultImage, setResultImage] = useState(null)
   const [error, setError] = useState(null)
+  const [gpuWarning, setGpuWarning] = useState(false) // Show if AI image generation failed
   const canvasRef = useRef(null)
 
   // Draw constellation preview
@@ -103,6 +105,7 @@ export function EndConversationModal({ isOpen, onClose, projectId, nodes, edges,
     if (!name.trim()) return
     setStage('generating')
     setError(null)
+    setGpuWarning(false)
 
     try {
       // Capture the current canvas as the skeleton for AI alignment
@@ -112,18 +115,33 @@ export function EndConversationModal({ isOpen, onClose, projectId, nodes, edges,
       }
 
       // Pass name AND skeleton image to the completion handler
+      // The backend will call aiService.generateConstellationImage with local GPU
       const result = await onComplete(name.trim(), skeletonImage)
 
       if (result.success) {
-        setResultImage(result.imageUrl)
+        // Check if image was generated or if we fell back to default
+        if (result.imageUrl) {
+          setResultImage(result.imageUrl)
+        } else {
+          // AI image generation failed but project completed successfully
+          setGpuWarning(true)
+          setResultImage(null)
+        }
         setStage('success')
       } else {
         setError(result.error || 'Failed to complete constellation')
         setStage('input')
       }
     } catch (err) {
-      setError(err.message)
-      setStage('input')
+      // Check for specific AI server errors
+      if (err.message?.includes('AI') || err.message?.includes('GPU') || err.message?.includes('image generation')) {
+        // Allow completion with default background
+        setGpuWarning(true)
+        setStage('success')
+      } else {
+        setError(err.message)
+        setStage('input')
+      }
     }
   }
 
@@ -132,6 +150,7 @@ export function EndConversationModal({ isOpen, onClose, projectId, nodes, edges,
     setStage('input')
     setResultImage(null)
     setError(null)
+    setGpuWarning(false)
     onClose()
   }
 
@@ -215,25 +234,43 @@ export function EndConversationModal({ isOpen, onClose, projectId, nodes, edges,
 
           {stage === 'generating' && (
             <div className="py-12 text-center">
-              <Loader2 size={48} className="mx-auto text-amber-400 animate-spin mb-4" />
-              <p className="text-gray-300">별자리를 완성하고 있습니다...</p>
-              <p className="text-sm text-gray-500 mt-2">이미지 생성에 시간이 걸릴 수 있습니다</p>
+              <div className="relative mx-auto w-fit">
+                <Loader2 size={48} className="text-amber-400 animate-spin mb-4" />
+                <Cpu size={20} className="absolute -right-2 -bottom-1 text-cyan-400 animate-pulse" />
+              </div>
+              <p className="text-gray-300 font-medium">Generating your constellation art with GPU...</p>
+              <p className="text-sm text-gray-500 mt-2">로컬 AI 서버에서 이미지를 생성하고 있습니다</p>
+              <p className="text-xs text-gray-600 mt-1">This may take a moment depending on GPU performance</p>
             </div>
           )}
 
           {stage === 'success' && (
             <div className="text-center">
               {resultImage ? (
-                <img
-                  src={resultImage}
-                  alt={name}
-                  className="w-full rounded-xl mb-4 border border-white/10"
-                />
+                <div className="relative">
+                  <img
+                    src={resultImage}
+                    alt={name}
+                    className="w-full rounded-xl mb-4 border border-white/10"
+                  />
+                  <div className="absolute top-2 right-2 px-2 py-1 bg-green-500/20 text-green-300 text-xs rounded-full border border-green-500/30">
+                    AI Generated
+                  </div>
+                </div>
               ) : (
                 <div className="py-8 mb-4 rounded-xl bg-black/40 border border-white/10">
                   <p className="text-6xl mb-4">✦</p>
+                  {gpuWarning ? (
+                    <div className="flex items-center justify-center gap-2 text-amber-400 mb-2">
+                      <AlertCircle size={16} />
+                      <span className="text-sm">커스텀 이미지를 생성할 수 없었습니다</span>
+                    </div>
+                  ) : null}
                   <p className="text-sm text-gray-400">
-                    이미지 생성에 실패했지만<br />별자리는 완성되었습니다
+                    {gpuWarning 
+                      ? '별자리는 기본 배경으로 완성되었습니다'
+                      : '이미지 생성에 실패했지만\n별자리는 완성되었습니다'
+                    }
                   </p>
                 </div>
               )}

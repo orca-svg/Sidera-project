@@ -72,27 +72,49 @@ export function InteractiveConstellation({
 
   // Load mythical image texture for Observatory display
   const [imageTexture, setImageTexture] = useState(null)
+  const [imageLoaded, setImageLoaded] = useState(false) // Track load state for fade-in
+  const [imageOpacity, setImageOpacity] = useState(0) // Animated opacity for smooth fade-in
+  const nebulaRef = useRef() // Reference for nebula mesh animation
+  
   useEffect(() => {
     if (!constellationImageUrl) {
       setImageTexture(null)
+      setImageLoaded(false)
+      setImageOpacity(0)
       return
     }
     const loader = new THREE.TextureLoader()
-    loader.load(constellationImageUrl, (tex) => {
-      tex.colorSpace = THREE.SRGBColorSpace
-      setImageTexture(tex)
-    })
+    loader.load(
+      constellationImageUrl, 
+      (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace
+        setImageTexture(tex)
+        setImageLoaded(true)
+      },
+      undefined,
+      (error) => {
+        console.warn('[InteractiveConstellation] Failed to load constellation image:', error)
+        setImageTexture(null)
+        setImageLoaded(false)
+      }
+    )
   }, [constellationImageUrl])
 
   // Calculate constellation bounding box for image sizing
-  const imageSize = useMemo(() => {
-    if (!nodes || nodes.length === 0) return 15
+  // Multiply by 2.5 to create a vast nebula effect that encompasses the stars
+  const { imageSizeX, imageSizeY } = useMemo(() => {
+    if (!nodes || nodes.length === 0) return { imageSizeX: 40, imageSizeY: 40 }
     const positions = nodes.map(n => n.position || [0, 0, 0])
     const xs = positions.map(p => Array.isArray(p) ? p[0] : (p.x ?? 0))
     const ys = positions.map(p => Array.isArray(p) ? p[1] : (p.y ?? 0))
     const rangeX = Math.max(...xs) - Math.min(...xs)
     const rangeY = Math.max(...ys) - Math.min(...ys)
-    return Math.max(rangeX, rangeY, 10) * 1.2 // 1.2x for margin
+    // Scale by 2.5x for vast nebula effect
+    const scaleFactor = 2.5
+    return {
+      imageSizeX: Math.max(rangeX, 15) * scaleFactor,
+      imageSizeY: Math.max(rangeY, 15) * scaleFactor
+    }
   }, [nodes])
 
   // ... existing code below (line 73+)
@@ -111,6 +133,22 @@ export function InteractiveConstellation({
       // Gentle rotation if not focused
       if (!isFocused) {
         groupRef.current.rotation.y += delta * 0.05
+      }
+
+      // Smooth fade-in animation for nebula image
+      if (imageLoaded && imageOpacity < 0.5) {
+        // Smoothly interpolate opacity towards target (0.5)
+        const newOpacity = THREE.MathUtils.lerp(imageOpacity, 0.5, delta * 2)
+        setImageOpacity(Math.min(newOpacity, 0.5))
+      }
+
+      // Animate nebula mesh scale for smooth appearance
+      if (nebulaRef.current && imageLoaded) {
+        const targetNebulaScale = 1.0
+        nebulaRef.current.scale.lerp(
+          new THREE.Vector3(targetNebulaScale, targetNebulaScale, targetNebulaScale),
+          delta * 3
+        )
       }
 
       // Proximity Check for Auto-Label
@@ -190,10 +228,33 @@ export function InteractiveConstellation({
         <meshBasicMaterial />
       </mesh>
 
-      {/* Luma Key Shader Implementation for Transparent Background */}
-      {imageTexture && (
-        <mesh position={[0, 0, -2]}>
-          <planeGeometry args={[imageSize, imageSize]} />
+      {/* Constellation Image Background - Vast Nebula with Additive Blending */}
+      {imageTexture && imageLoaded && (
+        <mesh 
+          ref={nebulaRef}
+          position={[0, 0, -1]} // Closer z position so stars feel embedded in nebula
+          scale={[0.1, 0.1, 0.1]} // Start small for fade-in animation
+        >
+          <planeGeometry args={[imageSizeX, imageSizeY]} />
+          <meshStandardMaterial
+            map={imageTexture}
+            transparent={true}
+            opacity={imageOpacity} // Animated opacity for smooth fade-in
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+            emissive="#4466aa"
+            emissiveIntensity={0.3}
+            emissiveMap={imageTexture}
+            toneMapped={false} // Preserve HDR glow
+          />
+        </mesh>
+      )}
+
+      {/* Luma Key Shader Implementation for Transparent Background (Alternative - Disabled) */}
+      {false && imageTexture && (
+        <mesh position={[0, 0, -1]}>
+          <planeGeometry args={[imageSizeX, imageSizeY]} />
           <shaderMaterial
             transparent
             depthWrite={false}

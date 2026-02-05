@@ -17,8 +17,68 @@ const verificationModel = model;
 // --- HUGGING FACE INFERENCE API ---
 const HF_TOKEN = process.env.IMAGE_HUGGING_FACE_API || process.env.HUGGING_FACE_TOKEN;
 
+// --- LOCAL AI SERVER CONFIGURATION ---
+const LOCAL_AI_SERVER_URL = process.env.LOCAL_AI_SERVER_URL || 'http://localhost:8000';
+
 /**
- * Generate a Mythical Constellation Image using Star Coordinates
+ * Generate a Constellation Image using Local Python AI Server
+ * @param {string} projectId - The ID of the project
+ * @param {string} constellationName - The name provided by the user
+ * @param {Array} nodes - Array of node objects with _id and position
+ * @param {Array} edges - Array of edge objects with source and target
+ * @returns {string|null} - The generated image URL or null if failed
+ */
+async function generateConstellationImage(projectId, constellationName, nodes, edges) {
+    try {
+        console.log(`[AI] Generating constellation image via local GPU server for project: ${projectId}`);
+        
+        // Prepare request body
+        const requestBody = {
+            projectId: projectId,
+            constellationName: constellationName,
+            nodes: nodes.map(node => ({
+                id: node._id?.toString() || node.id?.toString(),
+                position: node.position
+            })),
+            edges: edges.map(edge => ({
+                source: edge.source?.toString(),
+                target: edge.target?.toString()
+            })),
+            prompt: "ethereal nebula constellation art"
+        };
+
+        const response = await fetch(`${LOCAL_AI_SERVER_URL}/generate-constellation`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[AI] Local AI server error: ${response.status} - ${errorText}`);
+            return null;
+        }
+
+        const result = await response.json();
+        const imageUrl = result.imageUrl; // e.g., /constellations/{projectId}.png
+        
+        console.log(`[AI] Constellation image generated successfully: ${imageUrl}`);
+        return imageUrl;
+
+    } catch (error) {
+        if (error.code === 'ECONNREFUSED' || error.cause?.code === 'ECONNREFUSED') {
+            console.error(`[AI] Local AI server is not running at ${LOCAL_AI_SERVER_URL}. Please start the Python AI server.`);
+        } else {
+            console.error(`[AI] Failed to generate constellation image: ${error.message}`);
+        }
+        return null;
+    }
+}
+
+/**
+ * Generate a Mythical Constellation Image using Star Coordinates (HuggingFace API - Legacy)
  * @param {Array} starPositions - Array of {x, y, z, label} objects representing star positions
  * @param {string} topic - The constellation name/topic
  * @returns {string|null} - The generated image as base64
@@ -514,5 +574,6 @@ module.exports = {
     calculateStarRating,
     getEnglishEmbedding,
     checkTopicRelevance, // Exported
-    generateMythicalImage
+    generateMythicalImage,
+    generateConstellationImage
 };
