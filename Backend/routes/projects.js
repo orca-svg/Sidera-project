@@ -149,6 +149,36 @@ router.patch('/:id/auto-rename', async (req, res) => {
     }
 });
 
+// Regenerate Mythical Image (Manual Trigger)
+router.post('/:id/regenerate-image', async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+
+        const project = await Project.findOne({ _id: req.params.id, userId: req.user._id });
+        if (!project) return res.status(404).json({ message: 'Project not found' });
+
+        // Fetch stars
+        const nodes = await Node.find({ projectId: req.params.id }).select('position topicSummary');
+        const starPositions = nodes.map(n => ({
+            x: n.position?.x || 0,
+            y: n.position?.y || 0,
+            z: n.position?.z || 0,
+            label: n.topicSummary || ''
+        }));
+
+        const aiService = require('../services/aiService');
+        const imageUrl = await aiService.generateMythicalImage(starPositions, project.constellationName);
+
+        project.constellationImageUrl = imageUrl;
+        await project.save();
+
+        res.json({ imageUrl });
+    } catch (err) {
+        console.error("[Regenerate] Error:", err);
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // Get Project Summary
 router.get('/:id/summary', async (req, res) => {
     try {
