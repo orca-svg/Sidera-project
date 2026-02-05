@@ -152,7 +152,7 @@ function ObservatoryView() {
         const phi = Math.acos(1 - 2 * (index + 0.5) / total)
         const theta = Math.PI * (1 + Math.sqrt(5)) * (index + 0.5)
 
-        const radius = 160 // Compact Sphere (User Request)
+        const radius = 80
 
         return [
             radius * Math.sin(phi) * Math.cos(theta),
@@ -250,16 +250,24 @@ function InteractiveBackground({ children }) {
     })
 
     const { viewMode } = useStore() // Get viewMode
+    const observatoryFocusedConstellation = useStore(state => state.observatoryFocusedConstellation)
+    const isFocused = !!observatoryFocusedConstellation
 
     useFrame((state) => {
         if (ref.current) {
-            // Gentle rotation based on mouse position (Parallax)
-            // Kept active in Observatory Mode as per user request
-            const x = mouseRef.current.x * 0.2
-            const y = mouseRef.current.y * 0.2
+            // Parallax Logic:
+            // 1. In Telescope Mode (!isFocused): Enable Parallax (Mouse Rotation)
+            // 2. In Inspection Mode (isFocused): Disable Parallax (Lerp to 0) -> Pure Orbit
+            if (isFocused) {
+                ref.current.rotation.y = THREE.MathUtils.lerp(ref.current.rotation.y, 0, 0.05)
+                ref.current.rotation.x = THREE.MathUtils.lerp(ref.current.rotation.x, 0, 0.05)
+            } else {
+                const x = mouseRef.current.x * 0.2
+                const y = mouseRef.current.y * 0.2
 
-            ref.current.rotation.y = THREE.MathUtils.lerp(ref.current.rotation.y, x, 0.05)
-            ref.current.rotation.x = THREE.MathUtils.lerp(ref.current.rotation.x, -y, 0.05)
+                ref.current.rotation.y = THREE.MathUtils.lerp(ref.current.rotation.y, x, 0.05)
+                ref.current.rotation.x = THREE.MathUtils.lerp(ref.current.rotation.x, -y, 0.05)
+            }
         }
     })
 
@@ -270,109 +278,7 @@ function InteractiveBackground({ children }) {
     )
 }
 
-// --- Manual Controls for Observatory Overview (Telescope Feel) ---
-function ObservatoryManualControls() {
-    const { camera, gl } = useThree()
 
-    // State references (using refs for smooth frame updates)
-    const radius = useRef(0.0) // Start directly at center
-    const theta = useRef(Math.PI)
-    const phi = useRef(Math.PI / 2)
-    const targetRadius = useRef(0.0)
-    const targetTheta = useRef(0)
-    const targetPhi = useRef(Math.PI / 2)
-
-    const isDragging = useRef(false)
-    const lastMouse = useRef({ x: 0, y: 0 })
-    const initialized = useRef(false)
-
-    useEffect(() => {
-        // Initialize State from Current Camera
-        const vec = new THREE.Vector3()
-        camera.getWorldDirection(vec) // Normalized Direction Vector
-        const spherical = new THREE.Spherical().setFromVector3(vec)
-
-        const currentPos = camera.position
-        const currentDist = currentPos.length()
-
-        if (!initialized.current) {
-            // If very close to 0, align to 0.
-            targetRadius.current = currentDist < 1.0 ? 0.0 : currentDist
-            radius.current = targetRadius.current
-
-            targetTheta.current = spherical.theta
-            theta.current = spherical.theta
-            targetPhi.current = spherical.phi
-            phi.current = spherical.phi
-            initialized.current = true
-        }
-
-        const handleMouseDown = (e) => {
-            isDragging.current = true
-            lastMouse.current = { x: e.clientX, y: e.clientY }
-        }
-
-        const handleMouseMove = (e) => {
-            if (!isDragging.current) return
-            const dx = e.clientX - lastMouse.current.x
-            const dy = e.clientY - lastMouse.current.y
-            lastMouse.current = { x: e.clientX, y: e.clientY }
-
-            const speed = 0.003
-            targetTheta.current -= dx * speed
-            targetPhi.current -= dy * speed
-            targetPhi.current = Math.max(0.1, Math.min(Math.PI - 0.1, targetPhi.current))
-        }
-
-        const handleMouseUp = () => { isDragging.current = false }
-
-        const handleWheel = (e) => {
-            const zoomSpeed = 0.5
-            targetRadius.current += -e.deltaY * zoomSpeed
-            // Snap to 0 if close
-            if (targetRadius.current < 0.5) targetRadius.current = 0.0
-            // Max Limit 135 (Inside R=140)
-            targetRadius.current = Math.max(0.0, Math.min(135, targetRadius.current))
-        }
-
-        gl.domElement.addEventListener('pointerdown', handleMouseDown)
-        window.addEventListener('pointermove', handleMouseMove)
-        window.addEventListener('pointerup', handleMouseUp)
-        gl.domElement.addEventListener('wheel', handleWheel)
-
-        return () => {
-            gl.domElement.removeEventListener('pointerdown', handleMouseDown)
-            window.removeEventListener('pointermove', handleMouseMove)
-            window.removeEventListener('pointerup', handleMouseUp)
-            gl.domElement.removeEventListener('wheel', handleWheel)
-        }
-    }, [camera, gl])
-
-    useFrame(() => {
-        const damp = 0.1
-        // Smooth transitions
-        radius.current = THREE.MathUtils.lerp(radius.current, targetRadius.current, damp)
-        theta.current = THREE.MathUtils.lerp(theta.current, targetTheta.current, damp)
-        phi.current = THREE.MathUtils.lerp(phi.current, targetPhi.current, damp)
-
-        // Exact Zero Check
-        if (Math.abs(radius.current) < 0.01) radius.current = 0.0
-
-        const x = Math.sin(phi.current) * Math.sin(theta.current)
-        const y = Math.cos(phi.current)
-        const z = Math.sin(phi.current) * Math.cos(theta.current)
-
-        // Update Position
-        const newPos = new THREE.Vector3(x, y, z).multiplyScalar(radius.current)
-        camera.position.copy(newPos)
-
-        // Look Outward
-        const lookTarget = new THREE.Vector3(x, y, z).multiplyScalar(radius.current + 100)
-        camera.lookAt(lookTarget)
-    })
-
-    return null
-}
 
 // internal helper for smooth visibility transition
 function AnimatedUniverse({ children }) {
@@ -494,6 +400,137 @@ function MythicalBackgroundLayer() {
     )
 }
 
+// --- Observatory Camera Controller ---
+// 반드시 Universe 외부에 정의해야 함.
+// 내부 정의 시 Universe 매 re-render마다 컴포넌트 타입이 바뀌어
+// React가 unmount/remount를 반복하여 useRef 상태가 초기화됨.
+function ObservatoryCameraController({ controlsRef }) {
+    const { viewMode, telescopeZoom, setTelescopeZoom, setObservatoryFocusedConstellation } = useStore()
+    const observatoryFocusedConstellation = useStore(state => state.observatoryFocusedConstellation)
+    const isFocused = !!observatoryFocusedConstellation
+    const wasFocused = useRef(false)
+    const lastFocusedId = useRef(null)
+
+    const cameraAnimationRef = useRef({
+        isAnimating: false,
+        startPos: new THREE.Vector3(),
+        targetPos: new THREE.Vector3(),
+        startLook: new THREE.Vector3(),
+        targetLook: new THREE.Vector3(),
+        progress: 0
+    })
+
+    // Wheel: FOV Zoom은 망원경 모드에서만
+    useEventListener('wheel', (e) => {
+        if (viewMode === 'observatory' && !isFocused) {
+            const zoomSpeed = 0.05
+            let newZoom = useStore.getState().telescopeZoom + e.deltaY * zoomSpeed
+            newZoom = Math.max(25, Math.min(75, newZoom))
+            setTelescopeZoom(newZoom)
+        }
+    })
+
+    // ESC: 포커스 모드 해제
+    useEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && viewMode === 'observatory' && isFocused) {
+            setObservatoryFocusedConstellation(null)
+        }
+    })
+
+    // 전이 로직
+    useEffect(() => {
+        if (viewMode !== 'observatory' || !controlsRef.current) return
+
+        if (isFocused) {
+            // 같은 별자리에 대한 중복 트리거 방지
+            if (observatoryFocusedConstellation?.projectId === lastFocusedId.current) return
+            lastFocusedId.current = observatoryFocusedConstellation?.projectId
+
+            const [tx, ty, tz] = observatoryFocusedConstellation.position
+            // 별자리 방향 단위 벡터 × approachRadius → 구 내부 카메라 위치
+            const dir = new THREE.Vector3(tx, ty, tz).normalize()
+            const approachRadius = 60 // 원점에서의 거리 (구 반지름 80 내)
+
+            // 현재 카메라 상태 캡처
+            controlsRef.current.getPosition(cameraAnimationRef.current.startPos)
+            controlsRef.current.getTarget(cameraAnimationRef.current.startLook)
+
+            // 카메라: 별자리 방향으로 10유니트 안쪽에 배치 → 별자리(타겟)를 바라봄
+            const closeRadius = 70 // 구 반지름 80 - 10 (안쪽)
+            cameraAnimationRef.current.targetPos.set(dir.x * closeRadius, dir.y * closeRadius, dir.z * closeRadius)
+            cameraAnimationRef.current.targetLook.set(tx, ty, tz)
+            cameraAnimationRef.current.progress = 0
+            cameraAnimationRef.current.isAnimating = true
+
+            wasFocused.current = true
+        } else {
+            lastFocusedId.current = null
+
+            if (wasFocused.current) {
+                // 현재 카메라 상태에서 복귀 타겟까지 부드럽게 이동
+                controlsRef.current.getPosition(cameraAnimationRef.current.startPos)
+                controlsRef.current.getTarget(cameraAnimationRef.current.startLook)
+
+                cameraAnimationRef.current.targetPos.set(0, 0, 0)
+                cameraAnimationRef.current.targetLook.set(0, 0, 50)
+                cameraAnimationRef.current.progress = 0
+                cameraAnimationRef.current.isAnimating = true
+
+                setTelescopeZoom(60)
+                wasFocused.current = false
+            }
+        }
+    }, [isFocused, observatoryFocusedConstellation, viewMode, controlsRef])
+
+    useFrame((state, delta) => {
+        // 1. FOV 로직
+        if (viewMode === 'observatory') {
+            if (isFocused) {
+                state.camera.fov = THREE.MathUtils.lerp(state.camera.fov, 60, 0.1)
+            } else {
+                state.camera.fov = THREE.MathUtils.lerp(state.camera.fov, telescopeZoom, 0.1)
+                if (controlsRef.current) {
+                    const sensitivityRatio = state.camera.fov / 75
+                    controlsRef.current.azimuthRotateSpeed = -0.5 * sensitivityRatio
+                    controlsRef.current.polarRotateSpeed = -0.5 * sensitivityRatio
+                }
+            }
+            state.camera.updateProjectionMatrix()
+        } else if (Math.abs(state.camera.fov - 60) > 0.1) {
+            state.camera.fov = THREE.MathUtils.lerp(state.camera.fov, 60, 0.1)
+            state.camera.updateProjectionMatrix()
+        }
+
+        // 2. Linear Camera Interpolation
+        const anim = cameraAnimationRef.current
+        if (anim.isAnimating && controlsRef.current) {
+            anim.progress += delta / 0.8
+
+            if (anim.progress >= 1) {
+                anim.isAnimating = false
+                controlsRef.current.setLookAt(
+                    anim.targetPos.x, anim.targetPos.y, anim.targetPos.z,
+                    anim.targetLook.x, anim.targetLook.y, anim.targetLook.z,
+                    false
+                )
+                return
+            }
+
+            const t = THREE.MathUtils.smoothstep(anim.progress, 0, 1)
+            const pos = new THREE.Vector3().lerpVectors(anim.startPos, anim.targetPos, t)
+            const look = new THREE.Vector3().lerpVectors(anim.startLook, anim.targetLook, t)
+
+            controlsRef.current.setLookAt(
+                pos.x, pos.y, pos.z,
+                look.x, look.y, look.z,
+                false
+            )
+        }
+    })
+
+    return null
+}
+
 export function Universe({ isInteractive = true }) {
     // Optimized: Use selective Zustand selectors to prevent unnecessary re-renders
     const nodes = useStore(state => state.nodes)
@@ -506,6 +543,7 @@ export function Universe({ isInteractive = true }) {
     const focusTarget = useStore(state => state.focusTarget)
     const settings = useStore(state => state.settings)
     const cameraControlsRef = useRef()
+    const wasFocused = useRef(false) // Track if we were previously focused to allow smooth return
 
     console.log(`[Universe] Rendering ${nodes.length} stars and ${edges.length} edges`)
 
@@ -531,69 +569,13 @@ export function Universe({ isInteractive = true }) {
     }, [isInteractive, setActiveNode])
 
     const observatoryFocusedConstellation = useStore(state => state.observatoryFocusedConstellation)
-
-    // ... existing code ...
-
-    // --- Telescope Zoom Controller (R3F Hooks must be inside Canvas) ---
-    function TelescopeZoomController() {
-        const { viewMode, telescopeZoom, setTelescopeZoom } = useStore()
-
-        useEventListener('wheel', (e) => {
-            if (viewMode === 'observatory') {
-                const zoomSpeed = 0.05
-                // Read current value from store (via prop or getState if available, but here we depend on re-render which is fine for wheel throttled)
-                // Actually, accessing state inside callback needs care.
-                // We use function update pattern if possible, but store.setState is external.
-                // Simpler: use the value from hook closure.
-                let newZoom = telescopeZoom + e.deltaY * zoomSpeed
-                newZoom = Math.max(10, Math.min(75, newZoom))
-                setTelescopeZoom(newZoom)
-            }
-        })
-
-        useFrame((state) => {
-            if (viewMode === 'observatory') {
-                // Smoothly interpolate camera FOV to the target telescopeZoom
-                state.camera.fov = THREE.MathUtils.lerp(state.camera.fov, telescopeZoom, 0.1)
-                state.camera.updateProjectionMatrix()
-            } else if (Math.abs(state.camera.fov - 60) > 0.1) {
-                // Reset FOV in other modes
-                state.camera.fov = THREE.MathUtils.lerp(state.camera.fov, 60, 0.1)
-                state.camera.updateProjectionMatrix()
-            }
-        })
-
-        return null
-    }
+    const isFocused = !!observatoryFocusedConstellation
 
     // Camera Navigation Logic Update
     useEffect(() => {
         if (!cameraControlsRef.current) return
 
-        if (viewMode === 'observatory') {
-            // STRICT TELESCOPE MODE
-            cameraControlsRef.current.maxDistance = 0.001 // Lock to center
-            cameraControlsRef.current.minDistance = 0.001 // Lock to center
-
-            if (observatoryFocusedConstellation) {
-                // Focus: Look AT the star
-                const [x, y, z] = observatoryFocusedConstellation.position
-
-                // Set LookAt: Camera at (0,0,0), Target at Star
-                cameraControlsRef.current.setLookAt(
-                    0, 0, 0,  // Camera Anchor
-                    x, y, z,  // Target Star
-                    true      // Smooth
-                )
-                // Trigger Zoom In (Adjusted for R=160)
-                useStore.getState().setTelescopeZoom(35)
-            } else {
-                // Overview: Just ensure we are centered.
-                // We don't force lookAt here to allow user to look around freely.
-                // But we reset Zoom.
-                useStore.getState().setTelescopeZoom(75) // Wide view
-            }
-        } else if (viewMode === 'constellation' && focusTarget) {
+        if (viewMode === 'constellation' && focusTarget) {
             cameraControlsRef.current.minDistance = 2
             cameraControlsRef.current.maxDistance = 300
 
@@ -604,7 +586,7 @@ export function Universe({ isInteractive = true }) {
                 true         // Smooth Transition
             )
         }
-    }, [focusTarget, viewMode, observatoryFocusedConstellation])
+    }, [focusTarget, viewMode])
 
     // Cinematic Warp Logic Update
     useEffect(() => {
@@ -619,8 +601,8 @@ export function Universe({ isInteractive = true }) {
             cameraControlsRef.current.setLookAt(0, 0, 40, 0, 0, 0, true)
         } else if (viewMode === 'observatory') {
             // Warp into observatory center (0,0,0)
-            // Camera at 0, Target outward
-            cameraControlsRef.current.setLookAt(0, 0, 0, 0, 0, 100, true)
+            // INSTANT WARP (User Request): Transition = false
+            cameraControlsRef.current.setLookAt(0, 0, 0, 0, 0, 50, false)
         } else {
             // Warp OUT to chat (Deep Space View)
             cameraControlsRef.current.setLookAt(0, 0, 120, 0, 0, 0, true)
@@ -681,7 +663,7 @@ export function Universe({ isInteractive = true }) {
 
                 <InteractiveBackground>
                     {/* Layer 1: Persistent Background Stars (Always visible with Parallax) */}
-                    <Stars radius={200} depth={50} count={visualConfig.starCount} factor={4} saturation={0} fade speed={1} />
+                    <Stars radius={150} depth={50} count={visualConfig.starCount} factor={4} saturation={0} fade speed={1} />
 
                     {/* Layer 1.2: Active Mythical Background (Parallax ControlNet Image) */}
                     <MythicalBackgroundLayer />
@@ -693,7 +675,8 @@ export function Universe({ isInteractive = true }) {
                     <ObservatoryView />
 
                     {/* Logic Controller for Telescope Zoom (Inside Canvas) */}
-                    <TelescopeZoomController />
+                    {/* Logic Controller for Telescope Zoom & Camera Transitions (Inside Canvas) */}
+                    <ObservatoryCameraController controlsRef={cameraControlsRef} />
 
 
                     {/* Layer 2: Construct/Knowledge Graph (Visible only in Constellation Mode) */}
@@ -732,18 +715,20 @@ export function Universe({ isInteractive = true }) {
 
                 <CameraControls
                     ref={cameraControlsRef}
-                    // DYNAMIC CAMERA CONFIG
-                    // Observatory: Fixed Center, Telescope FOV Zoom
-                    minDistance={viewMode === 'observatory' ? 0.001 : 2}
-                    maxDistance={viewMode === 'observatory' ? 0.001 : 300}
+                    // DYNAMIC CAMERA CONFIG (Dual State: Telescope vs Inspection)
 
-                    // Invert Rotation for Telescope Feel
-                    azimuthRotateSpeed={viewMode === 'observatory' ? -0.5 : 1.0}
-                    polarRotateSpeed={viewMode === 'observatory' ? -0.5 : 1.0}
+                    // Telescope: 카메라 고정(0.001) / Focus: 원점 기준 구 내부 제한(10~75)
+                    minDistance={viewMode === 'observatory' ? (isFocused ? 5 : 0.001) : 2}
+                    maxDistance={viewMode === 'observatory' ? (isFocused ? 20 : 400) : 300}
 
-                    // Disable standard Dolly in Observatory (We use FOV)
-                    dollySpeed={viewMode === 'observatory' ? 0 : 0.5}
-                    truckSpeed={viewMode === 'observatory' ? 0 : 0.5}
+                    // Telescope Mode: Inverted Rotation / Inspection: Standard Orbit
+                    azimuthRotateSpeed={viewMode === 'observatory' ? (isFocused ? 1.0 : -0.5) : 1.0}
+                    polarRotateSpeed={viewMode === 'observatory' ? (isFocused ? 1.0 : -0.5) : 1.0}
+
+                    // Telescope Mode: Disable Dolly (use FOV) / Inspection: Enable Dolly
+                    dollySpeed={viewMode === 'observatory' ? (isFocused ? 1.0 : 0) : 0.5}
+                    truckSpeed={viewMode === 'observatory' ? (isFocused ? 1.0 : 0) : 0.5}
+                    zoomSpeed={viewMode === 'observatory' ? (isFocused ? 1.0 : 0) : 1.0}
 
                     smoothTime={0.8}
                     onChange={handleCameraChange}

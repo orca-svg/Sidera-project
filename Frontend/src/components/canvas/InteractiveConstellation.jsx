@@ -176,8 +176,29 @@ export function InteractiveConstellation({
     if (!pos) return [0, 0, 0]
     const x = Array.isArray(pos) ? pos[0] : (pos.x ?? 0)
     const y = Array.isArray(pos) ? pos[1] : (pos.y ?? 0)
-    const z = Array.isArray(pos) ? pos[2] : (pos.z ?? 0)
-    return [x, y, z] // No offset applied here, offset is on the group
+    const z = Array.isArray(pos) ? pos[0] : (pos.z ?? 0)
+    return [x, y, z] // Raw position
+  }
+
+  // Calculate Centroid to center the constellation visually around the group origin
+  const localCentroid = useMemo(() => {
+    if (nodes.length === 0) return [0, 0, 0]
+    let sx = 0, sy = 0, sz = 0
+    nodes.forEach(n => {
+      const p = getPosition(n.position)
+      sx += p[0]; sy += p[1]; sz += p[2]
+    })
+    return [sx / nodes.length, sy / nodes.length, sz / nodes.length]
+  }, [nodes])
+
+  // Helper to get Centered Local Position
+  const getCenteredPosition = (pos) => {
+    const raw = getPosition(pos)
+    return [
+      raw[0] - localCentroid[0],
+      raw[1] - localCentroid[1],
+      raw[2] - localCentroid[2]
+    ]
   }
 
   return (
@@ -241,26 +262,7 @@ export function InteractiveConstellation({
         </mesh>
       )}
 
-      {/* UI Overlay for Missing Image */}
-      {isFocused && !imageTexture && (
-        <Html position={[0, -imageSize / 2 - 5, 0]} center>
-          <div className="flex flex-col items-center gap-2 pointer-events-none">
-            <button
-              className={clsx(
-                "pointer-events-auto px-4 py-2 rounded-full",
-                "bg-gradient-to-r from-purple-500 to-indigo-600",
-                "text-white font-bold shadow-lg hover:scale-105 transition-transform",
-                isLoading && "opacity-50 cursor-wait"
-              )}
-              onClick={handleGenerate}
-              disabled={isLoading}
-            >
-              {isLoading ? "Generating..." : "Generate Mythical Image ✨"}
-            </button>
-            <p className="text-xs text-white/60">AI will visualize your constellation</p>
-          </div>
-        </Html>
-      )}
+      {/* UI Overlay Removed per User Request */}
 
       {/* Render Edges */}
       {edges.map((edge, i) => {
@@ -270,8 +272,8 @@ export function InteractiveConstellation({
         return (
           <Edge
             key={`e-${i}`}
-            start={getPosition(sourceNode.position)}
-            end={getPosition(targetNode.position)}
+            start={getCenteredPosition(sourceNode.position)}
+            end={getCenteredPosition(targetNode.position)}
             type={edge.type}
           />
         )
@@ -281,7 +283,7 @@ export function InteractiveConstellation({
       {nodes.map((node, i) => (
         <Star
           key={`n-${i}`}
-          position={getPosition(node.position)}
+          position={getCenteredPosition(node.position)}
           importance={node.importance}
         />
       ))}
