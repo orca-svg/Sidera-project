@@ -89,24 +89,31 @@ Sidera는 이러한 한계를 넘어, **대화를 구조화된 지식의 은하�
 
 | 구분 | 상세 내용 |
 | --- | --- |
-| **LLM** | Google Gemini 2.0 Flash (Chat & Reasoning) |
-| **Embedding** | Gecko (text-embedding-004) |
-| **Image Gen** | FLUX.1 (via HuggingFace) |
+| **LLM** | Google Gemma 3 27B IT (via Gemini API) |
+| **Embedding** | Gemini Embedding 001 (text-embedding-004) |
+| **Image Gen** | FLUX.1-schnell (via HuggingFace) |
+| **GPU Engine** | Local Python Server (RTX 4090) - High-res Nebula Rendering |
 | **Image Process** | BRIA RMBG-1.4 (Background Removal) |
 
 ---
 
-## 🔎 API 명세 요약
+## 🔎 API 명세 (Notion Format)
 
-| 도메인 | 메서드 | 엔드포인트 | 설명 |
-| --- | --- | --- | --- |
-| **Auth** | `GET` | `/api/auth/google` | 구글 로그인 시작 |
-| **Projects** | `GET` | `/api/projects` | 내 프로젝트 목록 조회 |
-| | `POST` | `/api/projects/:id/complete` | 별자리 완성 및 이미지 생성 |
-| **Chat** | `POST` | `/api/chat` | AI 대화 요청, 노드/엣지 생성 및 좌표 계산 |
-| **Nodes** | `GET` | `/api/nodes/:projectId` | 프로젝트의 모든 노드 데이터 조회 |
-| | `GET` | `/api/nodes/search` | 전체 노드 대상 키워드 검색 |
-| **Completion** | `GET` | `/api/projects/completed-images` | 관측소 뷰를 위한 완성된 별자리 데이터 조회 |
+| **도메인** | **이름** | **method** | **endpoint** | **comment** |
+| :--- | :--- | :--- | :--- | :--- |
+| **Auth** | Google Login Trigger | `GET` | `/api/auth/google` | Google OAuth 로그인 시작 |
+|  | Google Login Callback | `GET` | `/api/auth/google/callback` | Google 인증 콜백 및 JWT 발급 |
+|  | Verify Token | `GET` | `/api/auth/me` | 현재 토큰 유효성 검증 및 유저 정보 반환 |
+| **Chat & AI** | Chat Message | `POST` | `/api/chat` | AI와 대화 및 노드 생성 (RAG, 중요도, 좌표 계산 포함) |
+|  | Get Context | `GET` | `/api/chat/context/:nodeId` | 특정 노드의 대화 맥락(이전 대화 체인) 조회 |
+| **Projects** | List Projects | `GET` | `/api/projects` | 내 프로젝트 목록 조회 |
+|  | Create Project | `POST` | `/api/projects` | 새 프로젝트 생성 |
+|  | Get Project Detail | `GET` | `/api/projects/:id` | 프로젝트 상세 정보 및 노드/엣지 전체 조회 |
+|  | Complete Project | `POST` | `/api/projects/:id/complete` | 프로젝트 완료 처리 및 별자리 신화 이미지 생성 |
+|  | Auto Rename | `PATCH` | `/api/projects/:id/auto-rename` | AI가 대화 내용을 분석하여 프로젝트 이름 자동 변경 |
+| **Nodes** | List Nodes | `GET` | `/api/nodes/:projectId` | 특정 프로젝트의 모든 노드 조회 |
+|  | Search Nodes | `GET` | `/api/nodes/search` | 노드 검색 (키워드/내용) |
+| **Edges** | Refresh Edges | `POST` | `/api/projects/:id/refresh-edges` | (Refactor) 모든 엣지를 최신 로직으로 재계산 |
 
 ---
 

@@ -173,7 +173,7 @@ AI는 사용자의 **질문 의도(Inquiry Intent)**를 분석하여 중요도�
          ↓
 [모달: 2D 미리보기 + 이름 입력]
          ↓
-[Imagen 3.0 API: 성운 이미지 생성]
+[FLUX.1 API: 성운 이미지 생성]
          ↓
 [프로젝트 잠금 (status: 'completed')]
          ↓
@@ -189,10 +189,11 @@ AI는 사용자의 **질문 의도(Inquiry Intent)**를 분석하여 중요도�
 | **사이드바** | MessageSquare 아이콘 → ✦ 아이콘으로 변경 |
 | **이름 변경** | Edit 버튼 숨김 (삭제만 가능) |
 
-### B. Imagen 3.0 이미지 생성
+### B. FLUX.1 이미지 생성
 
 - **엔드포인트**: `POST /api/projects/:id/complete`
-- **프롬프트**: 
+- **모델**: **FLUX.1-schnell** (via HuggingFace)
+- **프롬프트**:  
   ```
   A breathtaking cosmic nebula scene representing "${constellationName}", 
   dark deep space, vibrant nebula in purple blue gold, 
@@ -435,7 +436,7 @@ position = { x: radius * cos(angle), y: radius * sin(angle), z: -20 }
 │ 2. Gemini 형태 분석:                                             │
 │    좌표 + 이름("블랙홀구조") → "a swirling black hole"           │
 │                    ↓                                            │
-│ 3. SDXL 생성: Text-to-Image (Stable Diffusion XL)               │
+│ 3. FLUX.1 생성: Text-to-Image (Black Forest Labs)         │
 │    Prompt: "a swirling black hole, elegant illustration..."     │
 │                    ↓                                            │
 │ 4. BRIA RMBG-1.4: 배경 제거 → 투명 PNG                          │
@@ -450,8 +451,8 @@ position = { x: radius * cos(angle), y: radius * sin(angle), z: -20 }
 
 | 구성 요소 | 역할 | 모델/엔드포인트 |
 |-----------|------|-----------------|
-| **Gemini** | 좌표 + 이름 → 형태 설명 | `gemini-2.0-flash` |
-| **SDXL** | Text-to-Image 생성 | `black-forest-labs/FLUX.1-schnell` |
+| **Gemini** | 좌표 + 이름 → 형태 분석 | `Google Gemma 3 27B IT` |
+| **FLUX.1** | Text-to-Image 생성 | `black-forest-labs/FLUX.1-schnell` |
 | **BRIA RMBG** | 배경 제거 | `briaai/RMBG-1.4` |
 
 ### Gemini 형태 분석 프롬프트

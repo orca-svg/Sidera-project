@@ -71,13 +71,12 @@ Usually handled via passport-google-oauth20.
 - **Body**:
   ```json
   {
-    "constellationName": "라디오",
-    "constellationImageSkeleton": "data:image/jpeg;base64,..." // Optional: Canvas capture
+    "constellationName": "라디오"
   }
   ```
 - **AI Pipeline**:
-  1. Gemini translates Korean name to English
-  2. SDXL generates object illustration
+  1. AI analyzes constellation shape using star coordinates
+  2. FLUX.1 generates object illustration
   3. BRIA RMBG removes background → transparent PNG
 - **Response**:
   ```json
