@@ -18,7 +18,9 @@ export const useStore = create((set, get) => ({
 
   // Observatory Mode State
   observatoryFocusedConstellation: null, // { projectId, position }
+  observatoryFocusedConstellation: null, // { projectId, position }
   observatoryHoveredConstellation: null, // projectId
+  telescopeZoom: 60, // FOV for Observatory Mode (default 60, min 10, max 75)
 
   settings: {
     temperature: 0.7,
@@ -35,6 +37,7 @@ export const useStore = create((set, get) => ({
   // Observatory Actions
   setObservatoryFocusedConstellation: (data) => set({ observatoryFocusedConstellation: data }),
   setObservatoryHoveredConstellation: (projectId) => set({ observatoryHoveredConstellation: projectId }),
+  setTelescopeZoom: (zoom) => set({ telescopeZoom: zoom }),
 
   // Enter constellation from Observatory
   enterConstellationFromObservatory: async (projectId) => {
