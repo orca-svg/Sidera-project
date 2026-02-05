@@ -423,62 +423,73 @@ position = { x: radius * cos(angle), y: radius * sin(angle), z: -20 }
 
 ## 14. AI 별자리 이미지 생성 (Constellation Image Generation)
 
-별자리 완성 시, AI가 사용자가 지은 이름에 기반하여 오브젝트 이미지를 생성하고 별자리 배경에 표시합니다.
+별자리 완성 시, AI가 **별 좌표와 이름을 분석**하여 해당 형태의 오브젝트 이미지를 생성합니다.
 
 ### 생성 파이프라인
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ 1. 사용자 입력: "라디오"                                         │
+│ 1. 별자리 완성 시 별 좌표 수집                                   │
+│    예: [(0,5), (3,2), (-2,8), (1,-3)]                           │
 │                    ↓                                            │
-│ 2. Gemini 번역: "라디오" → "Radio"                              │
+│ 2. Gemini 형태 분석:                                             │
+│    좌표 + 이름("블랙홀구조") → "a swirling black hole"           │
 │                    ↓                                            │
 │ 3. SDXL 생성: Text-to-Image (Stable Diffusion XL)               │
-│    Prompt: "A simple elegant illustration of Radio..."          │
+│    Prompt: "a swirling black hole, elegant illustration..."     │
 │                    ↓                                            │
-│ 4. BRIA RMBG-2.0: 배경 제거 → 투명 PNG                          │
+│ 4. BRIA RMBG-1.4: 배경 제거 → 투명 PNG                          │
 │                    ↓                                            │
-│ 5. DB 저장: project.constellationImageUrl (Base64 Data URL)     │
+│ 5. AdditiveBlending: 검은 배경 자동 투명화                       │
+│                    ↓                                            │
+│ 6. DB 저장: project.constellationImageUrl (Base64 Data URL)     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 주요 구성 요소
+### 주요 구성 요소 및 모델
 
-| 구성 요소 | 역할 | 엔드포인트/모델 |
+| 구성 요소 | 역할 | 모델/엔드포인트 |
 |-----------|------|-----------------|
-| **Gemini** | 한국어→영어 번역 | `gemini-2.0-flash` |
-| **SDXL** | 이미지 생성 | `stabilityai/stable-diffusion-xl-base-1.0` |
-| **BRIA RMBG** | 배경 제거 | `briaai/RMBG-2.0` |
+| **Gemini** | 좌표 + 이름 → 형태 설명 | `gemini-2.0-flash` |
+| **SDXL** | Text-to-Image 생성 | `black-forest-labs/FLUX.1-schnell` |
+| **BRIA RMBG** | 배경 제거 | `briaai/RMBG-1.4` |
 
-### 프롬프트 엔지니어링
+### Gemini 형태 분석 프롬프트
 
 ```javascript
-// Positive Prompt
-`A simple elegant illustration of ${englishTopic}, clean minimalist design, 
- soft glowing outline, ethereal translucent style, isolated object on pure 
- black background, delicate line art, subtle glow effect`
-
-// Negative Prompt
-`text, watermark, stars, particles, sparkles, busy background, 
- realistic photo, cartoon, anime, ugly, distorted`
+/* ... (Same as above) ... */
+CRITICAL: Return a SINGULAR NOUN phrase (e.g., "a cherry" NOT "cherries").
 ```
 
-### 이미지 표시
+### FLUX.1 이미지 생성 프롬프트
 
-| 뷰 모드 | 표시 방식 | 컴포넌트 |
-|---------|-----------|----------|
-| **Constellation Mode** | 별자리 중심에 위치, 별 크기에 맞춤 (opacity 18%) | `MythicalBackgroundLayer` |
-| **Observatory Mode** | 각 별자리 배경에 개별 표시 (opacity 25%) | `InteractiveConstellation` |
+```javascript
+// Positive Prompt (Direct Instruction)
+`A single ${shapeDescription}, minimalist glowing icon style, centered on pure black background. 
+ Vector art, clean lines, simple silhouette, no background, high contrast. One object only.`
+// (Negative prompt not strictly used for FLUX)
+```
+
+### 이미지 표시 (Luma Key Shader)
+
+검은 배경의 이미지를 **Custom Shader**를 통해 픽셀 밝기(Luminance)가 낮으면 투명하게 처리합니다. 이는 AI가 생성한 검은색 배경(RGB 0,0,0 ~ 0,10,10)을 완벽하게 제거합니다.
+
+| 뷰 모드 | 처리 방식 | 설정값 | 컴포넌트 |
+|---------|----------|---------|----------|
+| **Constellation Mode** | ShaderMaterial (LumaKey) | Threshold 0.1, Smoothness 0.2 | `MythicalBackgroundLayer` |
+| **Observatory Mode** | ShaderMaterial (LumaKey) | Threshold 0.1, Smoothness 0.2 | `InteractiveConstellation` |
 
 ### 환경 변수
 
 ```env
 IMAGE_HUGGING_FACE_API=hf_xxxxx  # HuggingFace API Token
+GOOGLE_AI_KEY=xxx                # Gemini API Key (형태 분석용)
 ```
 
 ### 관련 파일
-- `Backend/services/aiService.js` - `generateMythicalImage()`
-- `Backend/routes/projects.js` - `POST /:id/complete`
+- `Backend/services/aiService.js` - `generateMythicalImage(starPositions, topic)`
+- `Backend/routes/projects.js` - `POST /:id/complete` (별 좌표 수집)
 - `Frontend/src/components/canvas/Universe.jsx` - `MythicalBackgroundLayer`
 - `Frontend/src/components/canvas/InteractiveConstellation.jsx`
+
 

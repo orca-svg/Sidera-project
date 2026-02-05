@@ -88,20 +88,21 @@ router.post('/:id/complete', async (req, res) => {
             return res.status(400).json({ message: 'Cannot complete a project with no nodes' });
         }
 
+        // Fetch all nodes for this project to get star positions
+        const nodes = await Node.find({ projectId: req.params.id }).select('position topicSummary');
+        const starPositions = nodes.map(n => ({
+            x: n.position?.x || 0,
+            y: n.position?.y || 0,
+            z: n.position?.z || 0,
+            label: n.topicSummary || ''
+        }));
+
         // Generate constellation image (graceful degradation on failure)
         const aiService = require('../services/aiService');
         let imageUrl = null;
         try {
-            // Check if we have a skeleton capture from frontend
-            const { constellationImageSkeleton } = req.body;
-
-            if (constellationImageSkeleton) {
-                // Use ControlNet for structure-aware generation
-                imageUrl = await aiService.generateMythicalImage(constellationImageSkeleton, constellationName.trim());
-            } else {
-                console.log("[Complete] No skeleton provided, skipping image generation.");
-                // fallback or skip
-            }
+            // Pass star positions along with constellation name
+            imageUrl = await aiService.generateMythicalImage(starPositions, constellationName.trim());
         } catch (imgErr) {
             console.error("[Complete] Image generation error:", imgErr.message);
         }

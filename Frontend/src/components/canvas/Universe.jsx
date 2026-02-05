@@ -341,13 +341,38 @@ function MythicalBackgroundLayer() {
     return (
         <mesh ref={meshRef} position={center}>
             <planeGeometry args={[size, size]} />
-            <meshBasicMaterial
-                map={texture}
+            <planeGeometry args={[size, size]} />
+            <shaderMaterial
                 transparent
-                opacity={0.5}
                 depthWrite={false}
-                blending={THREE.AdditiveBlending}
                 side={THREE.DoubleSide}
+                uniforms={{
+                    uTexture: { value: texture },
+                    uThreshold: { value: 0.1 },
+                    uSmoothness: { value: 0.2 },
+                    uOpacity: { value: 0.5 }
+                }}
+                vertexShader={`
+                    varying vec2 vUv;
+                    void main() {
+                        vUv = uv;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `}
+                fragmentShader={`
+                    uniform sampler2D uTexture;
+                    uniform float uThreshold;
+                    uniform float uSmoothness;
+                    uniform float uOpacity;
+                    varying vec2 vUv;
+
+                    void main() {
+                        vec4 texColor = texture2D(uTexture, vUv);
+                        float luminance = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
+                        float alpha = smoothstep(uThreshold, uThreshold + uSmoothness, luminance);
+                        gl_FragColor = vec4(texColor.rgb, alpha * uOpacity);
+                    }
+                `}
             />
         </mesh>
     )

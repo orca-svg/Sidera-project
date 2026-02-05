@@ -18,37 +18,50 @@ const verificationModel = model;
 const HF_TOKEN = process.env.IMAGE_HUGGING_FACE_API || process.env.HUGGING_FACE_TOKEN;
 
 /**
- * Generate a Mythical Constellation Image using Text-to-Image
- * @param {string} _skeletonBase64 - Unused (kept for API compatibility)
+ * Generate a Mythical Constellation Image using Star Coordinates
+ * @param {Array} starPositions - Array of {x, y, z, label} objects representing star positions
  * @param {string} topic - The constellation name/topic
  * @returns {string|null} - The generated image as base64
  */
-async function generateMythicalImage(_skeletonBase64, topic) {
+async function generateMythicalImage(starPositions, topic) {
     if (!HF_TOKEN) {
         console.warn("[AI] No HuggingFace Token found. Skipping image generation.");
         return null;
     }
 
     try {
-        // Step 0: Translate Korean topic to English with description
-        let englishTopic = topic;
+        // Step 1: Analyze constellation shape using Gemini
+        let shapeDescription = topic;
         try {
-            const translationResult = await model.generateContent(
-                `Translate the following constellation name to English. If it's an abstract concept (like "black hole", "gravity", "time"), provide a descriptive phrase suitable for image generation. Only respond with the English translation/description, nothing else: "${topic}"`
-            );
-            englishTopic = translationResult.response.text().trim() || topic;
-            console.log(`[AI] Translated "${topic}" → "${englishTopic}"`);
-        } catch (transErr) {
-            console.warn(`[AI] Translation failed, using original: ${transErr.message}`);
+            // Normalize coordinates to 2D for shape analysis
+            const coords = starPositions.map(p => `(${Math.round(p.x)}, ${Math.round(p.y)})`).join(', ');
+
+            const shapePrompt = `You are analyzing a constellation made of ${starPositions.length} stars.
+The star coordinates are: ${coords}
+
+The constellation is named "${topic}".
+
+Based on these coordinates AND the name, describe WHAT OBJECT this constellation represents.
+CRITICAL: Return a SINGULAR NOUN phrase (e.g., "a cherry" NOT "cherries").
+Focus on the visual shape that these connected points would form.
+Respond ONLY with the object description in English, nothing else.
+
+Example outputs: "a single soaring eagle", "a singular old radio", "one spiral galaxy", "a single coffee cup"`;
+
+            const shapeResult = await model.generateContent(shapePrompt);
+            shapeDescription = shapeResult.response.text().trim() || topic;
+            console.log(`[AI] Shape analysis: "${topic}" with ${starPositions.length} stars → "${shapeDescription}"`);
+        } catch (shapeErr) {
+            console.warn(`[AI] Shape analysis failed: ${shapeErr.message}`);
         }
 
-        console.log(`[AI] Generating mythical image for "${englishTopic}" via SDXL...`);
+        console.log(`[AI] Generating image for "${shapeDescription}" via FLUX.1...`);
 
-        // Use SDXL-base via new HF Router endpoint
-        const endpoint = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0";
+        // Use FLUX.1-schnell via HF Router (Better at following "single object" constant)
+        const endpoint = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell";
 
-        // Improved prompt for constellation-style visualization
-        const prompt = `A beautiful artistic representation of ${englishTopic}, simple elegant illustration, soft ethereal glow, minimalist line art style on pure black background, constellation-like appearance with connected glowing points, cosmic aesthetic, isolated object, high quality digital art, 4k`;
+        // FLUX Prompt: Very direct, no negative prompt needed usually
+        const prompt = `A single ${shapeDescription}, minimalist glowing icon style, centered on pure black background. Vector art, clean lines, simple silhouette, no background, high contrast. One object only.`;
 
         const response = await fetch(endpoint, {
             method: "POST",
@@ -59,9 +72,8 @@ async function generateMythicalImage(_skeletonBase64, topic) {
             body: JSON.stringify({
                 inputs: prompt,
                 parameters: {
-                    negative_prompt: "text, watermark, words, letters, realistic photo, complex background, busy scene, multiple objects, cartoon, anime, ugly, distorted, blurry, low quality, gray background, white background",
-                    guidance_scale: 9.0,
-                    num_inference_steps: 40
+                    // FLUX doesn't strictly need negative_prompt like SDXL
+                    num_inference_steps: 4
                 }
             }),
         });
@@ -71,7 +83,7 @@ async function generateMythicalImage(_skeletonBase64, topic) {
             if (response.status === 503) {
                 console.warn("[AI] HF Model Loading, retrying in 20s...");
                 await new Promise(r => setTimeout(r, 20000)); // Wait 20s for cold boot
-                return generateMythicalImage(_skeletonBase64, topic); // Retry once
+                return generateMythicalImage(starPositions, topic); // Retry once
             }
             const errorText = await response.text();
             throw new Error(`HF API Error: ${response.status} - ${errorText}`);

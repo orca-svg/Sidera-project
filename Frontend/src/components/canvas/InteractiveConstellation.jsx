@@ -190,17 +190,48 @@ export function InteractiveConstellation({
         <meshBasicMaterial />
       </mesh>
 
-      {/* Mythical Image Background (if available) */}
+      {/* Luma Key Shader Implementation for Transparent Background */}
       {imageTexture && (
         <mesh position={[0, 0, -2]}>
           <planeGeometry args={[imageSize, imageSize]} />
-          <meshBasicMaterial
-            map={imageTexture}
+          <shaderMaterial
             transparent
-            opacity={0.6}
             depthWrite={false}
-            blending={THREE.AdditiveBlending}
             side={THREE.DoubleSide}
+            uniforms={{
+              uTexture: { value: imageTexture },
+              uThreshold: { value: 0.1 }, // Black threshold
+              uSmoothness: { value: 0.2 }, // Smoothing edge
+              uOpacity: { value: 0.6 }     // Overall opacity
+            }}
+            vertexShader={`
+              varying vec2 vUv;
+              void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+              }
+            `}
+            fragmentShader={`
+              uniform sampler2D uTexture;
+              uniform float uThreshold;
+              uniform float uSmoothness;
+              uniform float uOpacity;
+              varying vec2 vUv;
+
+              void main() {
+                vec4 texColor = texture2D(uTexture, vUv);
+                
+                // Calculate luminance (standard weightings)
+                float luminance = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
+                
+                // Smoothly fade out dark pixels
+                // If luminance < threshold, alpha 0. If > threshold + smoothness, alpha uOpacity
+                float alpha = smoothstep(uThreshold, uThreshold + uSmoothness, luminance);
+                
+                // Keep color, modify alpha
+                gl_FragColor = vec4(texColor.rgb, alpha * uOpacity);
+              }
+            `}
           />
         </mesh>
       )}
