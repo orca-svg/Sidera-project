@@ -2,8 +2,6 @@
 > **"Turn Conversation Fragments into Constellations"**
 > 대화의 파편을 별자리로 잇는 3D AI 지식 시각화 서비스
 
-![Main View](./docs/observatory_view.png) 
-*(Note: Replace with actual screenshot path if available)*
 
 **Sidera**는 단순한 텍스트 기반의 채팅을 넘어, 사용자와 AI의 대화를 **3차원 우주 공간의 별(Node)과 연결선(Edge)**으로 시각화합니다. 휘발되는 대화가 아닌, 영구히 보존되는 나만의 지식 별자리를 만들어보세요.
 
