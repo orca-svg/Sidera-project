@@ -344,9 +344,9 @@ function MythicalBackgroundLayer() {
             <meshBasicMaterial
                 map={texture}
                 transparent
-                opacity={0.18}
+                opacity={0.5}
                 depthWrite={false}
-                blending={THREE.NormalBlending}
+                blending={THREE.AdditiveBlending}
                 side={THREE.DoubleSide}
             />
         </mesh>

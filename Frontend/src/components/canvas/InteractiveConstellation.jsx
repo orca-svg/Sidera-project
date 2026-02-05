@@ -197,8 +197,9 @@ export function InteractiveConstellation({
           <meshBasicMaterial
             map={imageTexture}
             transparent
-            opacity={0.25}
+            opacity={0.6}
             depthWrite={false}
+            blending={THREE.AdditiveBlending}
             side={THREE.DoubleSide}
           />
         </mesh>

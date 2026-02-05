@@ -30,11 +30,11 @@ async function generateMythicalImage(_skeletonBase64, topic) {
     }
 
     try {
-        // Step 0: Translate Korean topic to English using Gemini
+        // Step 0: Translate Korean topic to English with description
         let englishTopic = topic;
         try {
             const translationResult = await model.generateContent(
-                `Translate the following constellation name to English. Only respond with the English translation, nothing else. If it's already English, just return it as is: "${topic}"`
+                `Translate the following constellation name to English. If it's an abstract concept (like "black hole", "gravity", "time"), provide a descriptive phrase suitable for image generation. Only respond with the English translation/description, nothing else: "${topic}"`
             );
             englishTopic = translationResult.response.text().trim() || topic;
             console.log(`[AI] Translated "${topic}" → "${englishTopic}"`);
@@ -47,9 +47,8 @@ async function generateMythicalImage(_skeletonBase64, topic) {
         // Use SDXL-base via new HF Router endpoint
         const endpoint = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0";
 
-        // Prompt for clean, isolated object with transparent-style background
-        // Focus on the object itself without celestial elements
-        const prompt = `A simple elegant illustration of ${englishTopic}, clean minimalist design, soft glowing outline, ethereal translucent style, isolated object on pure black background, no text no watermark, delicate line art, subtle glow effect, high quality digital art`;
+        // Improved prompt for constellation-style visualization
+        const prompt = `A beautiful artistic representation of ${englishTopic}, simple elegant illustration, soft ethereal glow, minimalist line art style on pure black background, constellation-like appearance with connected glowing points, cosmic aesthetic, isolated object, high quality digital art, 4k`;
 
         const response = await fetch(endpoint, {
             method: "POST",
@@ -60,9 +59,9 @@ async function generateMythicalImage(_skeletonBase64, topic) {
             body: JSON.stringify({
                 inputs: prompt,
                 parameters: {
-                    negative_prompt: "text, watermark, words, letters, stars, particles, sparkles, dots, noise, busy background, complex background, detailed background, realistic photo, cartoon, anime, ugly, distorted, blurry, low quality",
-                    guidance_scale: 8.5,
-                    num_inference_steps: 35
+                    negative_prompt: "text, watermark, words, letters, realistic photo, complex background, busy scene, multiple objects, cartoon, anime, ugly, distorted, blurry, low quality, gray background, white background",
+                    guidance_scale: 9.0,
+                    num_inference_steps: 40
                 }
             }),
         });
@@ -84,10 +83,10 @@ async function generateMythicalImage(_skeletonBase64, topic) {
 
         console.log(`[AI] Generated base image for "${topic}" (${imageBuffer.length} bytes)`);
 
-        // Step 2: Remove background using BRIA RMBG-2.0
+        // Step 2: Remove background using BRIA RMBG-1.4 (fallback from 2.0)
         try {
             console.log(`[AI] Removing background...`);
-            const rmbgEndpoint = "https://router.huggingface.co/hf-inference/models/briaai/RMBG-2.0";
+            const rmbgEndpoint = "https://router.huggingface.co/hf-inference/models/briaai/RMBG-1.4";
 
             const rmbgResponse = await fetch(rmbgEndpoint, {
                 method: "POST",
@@ -104,10 +103,10 @@ async function generateMythicalImage(_skeletonBase64, topic) {
                 imageBuffer = Buffer.from(rmbgArrayBuffer);
                 console.log(`[AI] Background removed successfully (${imageBuffer.length} bytes)`);
             } else {
-                console.warn(`[AI] Background removal failed (${rmbgResponse.status}), using original image`);
+                console.warn(`[AI] Background removal failed (${rmbgResponse.status}), using additive blend fallback`);
             }
         } catch (rmbgErr) {
-            console.warn(`[AI] Background removal error: ${rmbgErr.message}, using original image`);
+            console.warn(`[AI] Background removal error: ${rmbgErr.message}`);
         }
 
         // Return as PNG with potential transparency
