@@ -98,7 +98,7 @@ python constellation_ai.py
 
 | Role | Name | Orgnization| Role |
 | :--- | :--- | :--- | :--- |
-| **Frontend/Design** | **이준엽** | "Dept. of Computer Science and Engineering, Korea University" | "Interactive 3D Experience & UI/UX" |
-| **Backend/AI** | **박찬우** | "School of Technology Management, Korea Advanced Institute of Science and Technology" | "System Architecture & Intelligence Pipeline" |
+| **Frontend/Design** | **이준엽** | "School of Technology Management, Korea Advanced Institute of Science and Technology" | "Interactive 3D Experience & UI/UX" |
+| **Backend/AI** | **박찬우** | "Dept. of Computer Science and Engineering, Korea University" | "System Architecture & Intelligence Pipeline" |
 
 ---
